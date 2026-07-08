@@ -1,14 +1,10 @@
-"""Tests for hybrid browser-backend routing (LAN/localhost auto-local).
+"""Tests for browser-backend routing.
 
-When a cloud browser provider (Browserbase / Browser-Use / Firecrawl) is
-configured globally, ``browser.auto_local_for_private_urls`` (default True)
-causes ``browser_navigate`` to transparently spawn a local Chromium sidecar
-for URLs whose host resolves to a private/loopback/LAN address, while
-public URLs continue to hit the cloud session in the same conversation.
-
-These tests cover the routing decision layer — session_key selection,
-sidecar detection, last-active-session tracking, and the config toggle.
-The downstream session creation is covered by test_browser_cloud_fallback.py.
+CloakBrowser is now the default browser backend, so URL-based hybrid routing
+does not split private URLs into a second ``::local`` sidecar session.  The
+legacy sidecar helpers still exist for cleanup/backward-compatible session
+metadata, but new navigation stays on the task's CloakBrowser session unless
+an explicit operator CDP override owns the session.
 """
 from unittest.mock import Mock
 
@@ -37,43 +33,43 @@ class TestNavigationSessionKey:
     """Tests for _navigation_session_key URL-based routing decisions."""
 
     def test_public_url_uses_bare_task_id(self, monkeypatch):
-        """Public URL with cloud provider configured → bare task_id (cloud)."""
+        """Public URL with cloud configured still uses the task's CloakBrowser key."""
         monkeypatch.setattr(browser_tool, "_get_cloud_provider", lambda: Mock())
         key = browser_tool._navigation_session_key("default", "https://github.com/x/y")
         assert key == "default"
 
-    def test_localhost_routes_to_local_sidecar(self, monkeypatch):
-        """``localhost`` URL → ``::local`` suffix when cloud configured + flag on."""
+    def test_localhost_stays_on_cloakbrowser_session(self, monkeypatch):
+        """``localhost`` URL no longer creates a separate local sidecar."""
         monkeypatch.setattr(browser_tool, "_get_cloud_provider", lambda: Mock())
         key = browser_tool._navigation_session_key("default", "http://localhost:3000/")
-        assert key == "default::local"
+        assert key == "default"
 
-    def test_loopback_ipv4_routes_to_local_sidecar(self, monkeypatch):
+    def test_loopback_ipv4_stays_on_cloakbrowser_session(self, monkeypatch):
         monkeypatch.setattr(browser_tool, "_get_cloud_provider", lambda: Mock())
         key = browser_tool._navigation_session_key("default", "http://127.0.0.1:8080/")
-        assert key == "default::local"
+        assert key == "default"
 
-    def test_rfc1918_lan_routes_to_local_sidecar(self, monkeypatch):
+    def test_rfc1918_lan_stays_on_cloakbrowser_session(self, monkeypatch):
         monkeypatch.setattr(browser_tool, "_get_cloud_provider", lambda: Mock())
         key = browser_tool._navigation_session_key("default", "http://192.168.1.50:8000/")
-        assert key == "default::local"
+        assert key == "default"
 
-    def test_ipv6_loopback_routes_to_local_sidecar(self, monkeypatch):
+    def test_ipv6_loopback_stays_on_cloakbrowser_session(self, monkeypatch):
         monkeypatch.setattr(browser_tool, "_get_cloud_provider", lambda: Mock())
         key = browser_tool._navigation_session_key("default", "http://[::1]:3000/")
-        assert key == "default::local"
+        assert key == "default"
 
     def test_public_ip_literal_uses_bare_task_id(self, monkeypatch):
         monkeypatch.setattr(browser_tool, "_get_cloud_provider", lambda: Mock())
         key = browser_tool._navigation_session_key("default", "https://8.8.8.8/")
         assert key == "default"
 
-    def test_mdns_local_hostname_routes_to_sidecar(self, monkeypatch):
-        """``*.local`` mDNS / ``*.lan`` / ``*.internal`` hostnames route to sidecar."""
+    def test_mdns_local_hostname_stays_on_cloakbrowser_session(self, monkeypatch):
+        """``*.local`` / ``*.lan`` / ``*.internal`` hosts do not split sessions."""
         monkeypatch.setattr(browser_tool, "_get_cloud_provider", lambda: Mock())
         for host in ("raspberrypi.local", "printer.lan", "db.internal"):
             key = browser_tool._navigation_session_key("default", f"http://{host}/")
-            assert key == "default::local", f"host {host!r} did not route to sidecar"
+            assert key == "default", f"host {host!r} unexpectedly split the CloakBrowser session"
 
     def test_no_cloud_provider_stays_on_bare_task_id(self, monkeypatch):
         """When cloud provider is not configured, no hybrid routing happens."""
@@ -96,17 +92,17 @@ class TestNavigationSessionKey:
         assert key == "default"
 
     def test_feature_flag_off_disables_hybrid_routing(self, monkeypatch):
-        """``auto_local_for_private_urls: false`` keeps private URLs on cloud."""
+        """The old auto-local flag no longer changes CloakBrowser routing."""
         monkeypatch.setattr(browser_tool, "_get_cloud_provider", lambda: Mock())
         monkeypatch.setattr(browser_tool, "_auto_local_for_private_urls", lambda: False)
         key = browser_tool._navigation_session_key("default", "http://localhost:3000/")
         assert key == "default"
 
-    def test_none_task_id_defaults(self, monkeypatch):
-        """``None`` task_id resolves to 'default'."""
+    def test_none_task_id_defaults_to_default_cloakbrowser_key(self, monkeypatch):
         monkeypatch.setattr(browser_tool, "_get_cloud_provider", lambda: Mock())
-        key = browser_tool._navigation_session_key(None, "http://localhost:3000/")
-        assert key == "default::local"
+        navigation_session_key = getattr(browser_tool, "_navigation_session_key")
+        key = navigation_session_key(None, "http://localhost:3000/")
+        assert key == "default"
 
 
 class TestSessionKeyHelpers:
@@ -119,9 +115,10 @@ class TestSessionKeyHelpers:
     def test_last_session_key_falls_back_to_task_id(self, monkeypatch):
         """Without a recorded last-active key, returns the bare task_id."""
         monkeypatch.setattr(browser_tool, "_last_active_session_key", {})
+        last_session_key = getattr(browser_tool, "_last_session_key")
         assert browser_tool._last_session_key("default") == "default"
         assert browser_tool._last_session_key("task-42") == "task-42"
-        assert browser_tool._last_session_key(None) == "default"
+        assert last_session_key(None) == "default"
 
     def test_last_session_key_returns_recorded_key(self, monkeypatch):
         monkeypatch.setattr(
@@ -179,10 +176,10 @@ class TestSessionKeyHelpers:
 
 
 class TestHybridRoutingSessionCreation:
-    """_get_session_info must force a local session when the key carries ``::local``."""
+    """_get_session_info uses CloakBrowser even for legacy sidecar-looking keys."""
 
     def test_local_sidecar_key_skips_cloud_provider(self, monkeypatch):
-        """A ``::local``-suffixed key creates a local session even when cloud is set."""
+        """A ``::local``-suffixed legacy key still skips cloud and uses CloakBrowser."""
         provider = Mock()
         provider.create_session.return_value = {
             "session_name": "should_not_be_used",
@@ -191,18 +188,28 @@ class TestHybridRoutingSessionCreation:
         }
         monkeypatch.setattr(browser_tool, "_get_cloud_provider", lambda: provider)
         monkeypatch.setattr(browser_tool, "_ensure_cdp_supervisor", lambda t: None)
+        monkeypatch.setattr(
+            browser_tool,
+            "_create_cloakbrowser_session",
+            lambda task_id: {
+                "session_name": "cloak-sess",
+                "bb_session_id": None,
+                "cdp_url": "ws://127.0.0.1:9222/devtools/browser/cloak",
+                "features": {"cloakbrowser": True},
+            },
+        )
 
         session = browser_tool._get_session_info("default::local")
 
         assert provider.create_session.call_count == 0
         assert session["bb_session_id"] is None
-        assert session["cdp_url"] is None
-        assert session["features"]["local"] is True
+        assert session["cdp_url"] == "ws://127.0.0.1:9222/devtools/browser/cloak"
+        assert session["features"]["cloakbrowser"] is True
         assert session["session_key"] == "default::local"
         assert session["owner_task_id"] == "default"
 
-    def test_bare_task_id_with_cloud_provider_uses_cloud(self, monkeypatch):
-        """A bare task_id with cloud provider configured hits the cloud path."""
+    def test_bare_task_id_with_cloud_provider_uses_cloakbrowser(self, monkeypatch):
+        """A bare task_id skips cloud because CloakBrowser is mandatory by default."""
         provider = Mock()
         provider.create_session.return_value = {
             "session_name": "cloud-sess",
@@ -212,11 +219,22 @@ class TestHybridRoutingSessionCreation:
         monkeypatch.setattr(browser_tool, "_get_cloud_provider", lambda: provider)
         monkeypatch.setattr(browser_tool, "_ensure_cdp_supervisor", lambda t: None)
         monkeypatch.setattr(browser_tool, "_resolve_cdp_override", lambda u: u)
+        monkeypatch.setattr(
+            browser_tool,
+            "_create_cloakbrowser_session",
+            lambda task_id: {
+                "session_name": "cloak-sess",
+                "bb_session_id": None,
+                "cdp_url": "ws://127.0.0.1:9222/devtools/browser/cloak",
+                "features": {"cloakbrowser": True},
+            },
+        )
 
         session = browser_tool._get_session_info("default")
 
-        assert provider.create_session.call_count == 1
-        assert session["bb_session_id"] == "bb_123"
+        assert provider.create_session.call_count == 0
+        assert session["bb_session_id"] is None
+        assert session["features"]["cloakbrowser"] is True
         assert session["session_key"] == "default"
         assert session["owner_task_id"] == "default"
 

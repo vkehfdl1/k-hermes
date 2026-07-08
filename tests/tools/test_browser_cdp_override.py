@@ -1,4 +1,6 @@
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
+
+from tools import cloakbrowser_runtime
 
 
 HOST = "example-host"
@@ -91,37 +93,50 @@ class TestResolveCdpOverride:
         assert "access_token=***" in logged_error
         assert logged_version_url.startswith("https://cdp.example")
 
-    def test_normalizes_provider_returned_http_cdp_url_when_creating_session(self, monkeypatch):
+    def test_uses_cloakbrowser_default_discovery_without_cloud_provider_when_creating_session(
+        self,
+        monkeypatch,
+    ):
         import tools.browser_tool as browser_tool
 
         provider = Mock()
-        provider.create_session.return_value = {
-            "session_name": "cloud-session",
-            "bb_session_id": "bu_123",
-            "cdp_url": "https://cdp.browser-use.example/session",
-            "features": {"browser_use": True},
-        }
+        launch_cloakserve = Mock()
+        ensure_supervisor = Mock()
+        peek_token_accepted = Mock(return_value=True)
+        task_id = "task-cloak-default"
+        seed = cloakbrowser_runtime.seed_for_task(task_id)
+        discovery_url = cloakbrowser_runtime.discovery_url(seed)
 
-        response = Mock()
-        response.raise_for_status.return_value = None
-        response.json.return_value = {"webSocketDebuggerUrl": WS_URL}
-
+        monkeypatch.setenv("CLOAKBROWSER_PEEK_TOKEN", "test-peek-token")
         monkeypatch.setattr(browser_tool, "_active_sessions", {})
         monkeypatch.setattr(browser_tool, "_session_last_activity", {})
         monkeypatch.setattr(browser_tool, "_start_browser_cleanup_thread", lambda: None)
         monkeypatch.setattr(browser_tool, "_update_session_activity", lambda task_id: None)
         monkeypatch.setattr(browser_tool, "_get_cdp_override", lambda: "")
         monkeypatch.setattr(browser_tool, "_get_cloud_provider", lambda: provider)
+        monkeypatch.setattr(cloakbrowser_runtime, "process_running", lambda: False)
+        monkeypatch.setattr(cloakbrowser_runtime, "launch_cloakserve", launch_cloakserve)
+        monkeypatch.setattr(cloakbrowser_runtime, "_peek_token_accepted", peek_token_accepted)
+        monkeypatch.setattr(browser_tool, "_ensure_cdp_supervisor", ensure_supervisor)
 
-        with patch("tools.browser_tool.requests.get", return_value=response) as mock_get:
-            session_info = browser_tool._get_session_info("task-browser-use")
+        with patch(
+            "tools.browser_tool._resolve_cdp_override",
+            side_effect=[discovery_url, WS_URL],
+        ) as resolve_cdp_override:
+            session_info = browser_tool._get_session_info(task_id)
 
         assert session_info["cdp_url"] == WS_URL
-        provider.create_session.assert_called_once_with("task-browser-use")
-        mock_get.assert_called_once_with(
-            "https://cdp.browser-use.example/session/json/version",
-            timeout=10,
-        )
+        assert session_info["features"] == {"cloakbrowser": True}
+        assert session_info["preview_url"] == cloakbrowser_runtime.preview_url(seed)
+        assert session_info["cloakbrowser_seed"] == seed
+        assert resolve_cdp_override.call_args_list == [
+            call(discovery_url),
+            call(discovery_url),
+        ]
+        peek_token_accepted.assert_called_once_with(seed)
+        launch_cloakserve.assert_called_once_with()
+        ensure_supervisor.assert_called_once_with(task_id)
+        provider.create_session.assert_not_called()
 
 
 class TestGetCdpOverride:

@@ -1,23 +1,20 @@
 #!/usr/bin/env python3
+# noqa: SIZE_OK - existing browser tool monolith; this change only routes default sessions through CloakBrowser and preserves current public tool APIs.
 """
 Browser Tool Module
 
-This module provides browser automation tools using agent-browser CLI.  It
-supports multiple backends — **Browser Use** (cloud, default for Nous
-subscribers), **Browserbase** (cloud, direct credentials), and **local
-Chromium** — with identical agent-facing behaviour.  The backend is
-auto-detected from config and available credentials.
+This module provides browser automation tools using agent-browser CLI.  By
+default it connects agent-browser to local CloakBrowser CDP.  Explicit CDP
+overrides still win, while legacy cloud/local Chromium providers remain
+available behind their helper APIs.
 
 The tool uses agent-browser's accessibility tree (ariaSnapshot) for text-based
 page representation, making it ideal for LLM agents without vision capabilities.
 
 Features:
-- **Local mode** (default): zero-cost headless Chromium via agent-browser.
-  Works on Linux servers without a display.  One-time setup:
-  ``agent-browser install`` (downloads Chromium) or
-  ``agent-browser install --with-deps`` (also installs system libraries for
-  Debian/Ubuntu/Docker).
-- **Cloud mode**: Browserbase or Browser Use cloud execution when configured.
+- **CloakBrowser CDP mode** (default): local stealth Chromium via cloakserve.
+- **Explicit CDP mode**: connect directly when BROWSER_CDP_URL/browser.cdp_url is set.
+- **Legacy provider helpers**: Browserbase, Browser Use, Firecrawl, and local Chromium code paths retained for compatibility.
 - Session isolation per task ID
 - Text-based page snapshots using accessibility tree
 - Element interaction via ref selectors (@e1, @e2, etc.)
@@ -35,6 +32,8 @@ Environment Variables:
   requires paid plan (default: "true")
 - BROWSERBASE_SESSION_TIMEOUT: Custom session timeout in seconds (max 21600 = 6h).
   Set to extend beyond project default. Common values: 600 (10min), 1800 (30min) (default: none)
+- CLOAKBROWSER_ROOT: Optional path to sibling CloakBrowser checkout containing bin/cloakserve
+- CLOAKBROWSER_PORT: Optional local cloakserve port (default: 9222)
 
 Usage:
     from tools.browser_tool import browser_navigate, browser_snapshot, browser_click
@@ -64,12 +63,14 @@ import time
 import requests
 from typing import Dict, Any, Optional, List, Tuple, Union
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 from agent.auxiliary_client import call_llm
 from agent.redact import redact_cdp_url
 from hermes_constants import agent_browser_runnable, get_hermes_home
 from utils import env_int, is_truthy_value
 from hermes_cli.config import DEFAULT_CONFIG, cfg_get
 from hermes_cli._subprocess_compat import windows_hide_flags
+from tools import cloakbrowser_runtime
 
 # Browser-specific tool keys passed through to the agent-browser subprocess
 # AFTER credential stripping.  agent-browser is a Node process loading npm
@@ -414,10 +415,14 @@ def _resolve_cdp_override(cdp_url: str) -> str:
         else:
             return raw
 
-    if discovery_url.lower().endswith("/json/version"):
+    parsed_discovery = urlsplit(discovery_url)
+    if parsed_discovery.path.rstrip("/") == "/json/version":
         version_url = discovery_url
     else:
-        version_url = discovery_url.rstrip("/") + "/json/version"
+        version_path = parsed_discovery.path.rstrip("/") + "/json/version"
+        if not version_path.startswith("/"):
+            version_path = "/" + version_path
+        version_url = urlunsplit(parsed_discovery._replace(path=version_path))
 
     try:
         response = requests.get(version_url, timeout=10)
@@ -474,6 +479,10 @@ def _get_cdp_override() -> str:
         logger.debug("Could not read browser.cdp_url from config: %s", e)
 
     return ""
+
+
+def _cloakbrowser_default_active() -> bool:
+    return not _get_cdp_override()
 
 
 def _get_dialog_policy_config() -> Tuple[str, float]:
@@ -782,6 +791,8 @@ def _is_local_mode() -> bool:
     """Return True when the browser tool will use a local browser backend."""
     if _get_cdp_override():
         return False
+    if _cloakbrowser_default_active():
+        return False
     return _get_cloud_provider() is None
 
 
@@ -790,10 +801,10 @@ def _is_local_backend() -> bool:
 
     SSRF protection is only meaningful for cloud backends (Browserbase,
     BrowserUse) where the agent could reach internal resources on a remote
-    machine.  For local backends — Camofox, or the built-in headless
-    Chromium without a cloud provider — the user already has full terminal
-    and network access on the same machine, so the check adds no security
-    value.
+    machine.  For local backends — CloakBrowser, Camofox, or the built-in
+    headless Chromium without a cloud provider — the user already has full
+    terminal and network access on the same machine, so the check adds no
+    security value.
 
     However, when the terminal runs in a container (docker, modal, daytona,
     ssh, singularity), the browser on the host can access internal networks
@@ -843,7 +854,7 @@ def _get_browser_engine() -> str:
     """
     global _cached_browser_engine, _browser_engine_resolved
     if _browser_engine_resolved:
-        return _cached_browser_engine
+        return _cached_browser_engine or "auto"
 
     _browser_engine_resolved = True
     _cached_browser_engine = "auto"  # safe default
@@ -1263,6 +1274,7 @@ def _navigation_session_key(task_id: str, url: str) -> str:
       3. The URL resolves to a private/LAN/loopback address.
       4. A CDP override is not active (that path owns the whole session).
       5. Camofox mode is not active (Camofox is already local-only).
+      6. CloakBrowser default mode is not active (it owns all URLs).
 
     When all are true, returns ``f"{task_id}::local"`` so the hybrid-routing
     path spawns a local Chromium sidecar while the cloud session (if any)
@@ -1271,6 +1283,8 @@ def _navigation_session_key(task_id: str, url: str) -> str:
     if task_id is None:
         task_id = "default"
     if _get_cdp_override():
+        return task_id
+    if _cloakbrowser_default_active():
         return task_id
     if _is_camofox_mode():
         return task_id
@@ -1348,7 +1362,7 @@ def _allow_private_urls() -> bool:
     """
     global _cached_allow_private_urls, _allow_private_urls_resolved
     if _allow_private_urls_resolved:
-        return _cached_allow_private_urls
+        return bool(_cached_allow_private_urls)
 
     _allow_private_urls_resolved = True
     _cached_allow_private_urls = False  # safe default
@@ -1362,7 +1376,7 @@ def _allow_private_urls() -> bool:
             )
     except Exception as e:
         logger.debug("Could not read allow_private_urls from config: %s", e)
-    return _cached_allow_private_urls
+    return bool(_cached_allow_private_urls)
 
 
 def _socket_safe_tmpdir() -> str:
@@ -1970,7 +1984,7 @@ BROWSER_TOOL_SCHEMAS = [
 # Utility Functions
 # ============================================================================
 
-def _create_local_session(task_id: str) -> Dict[str, str]:
+def _create_local_session(task_id: str) -> Dict[str, Any]:
     import uuid
     session_name = f"h_{uuid.uuid4().hex[:10]}"
     logger.info("Created local browser session %s for task %s",
@@ -1983,7 +1997,7 @@ def _create_local_session(task_id: str) -> Dict[str, str]:
     }
 
 
-def _create_cdp_session(task_id: str, cdp_url: str) -> Dict[str, str]:
+def _create_cdp_session(task_id: str, cdp_url: str) -> Dict[str, Any]:
     """Create a session that connects to a user-supplied CDP endpoint."""
     import uuid
     session_name = f"cdp_{uuid.uuid4().hex[:10]}"
@@ -1997,23 +2011,37 @@ def _create_cdp_session(task_id: str, cdp_url: str) -> Dict[str, str]:
     }
 
 
+def _create_cloakbrowser_session(task_id: str) -> Dict[str, Any]:
+    session_info: Dict[str, Any] = dict(cloakbrowser_runtime.create_session(
+        task_id,
+        _resolve_cdp_override,
+        _sanitize_url_for_logs,
+    ))
+    logger.info(
+        "Created CloakBrowser session %s → %s for task %s",
+        session_info["session_name"],
+        _sanitize_url_for_logs(session_info["cdp_url"]),
+        task_id,
+    )
+    return dict(session_info)
+
+
 def _get_session_info(task_id: Optional[str] = None) -> Dict[str, Any]:
     """
     Get or create session info for the given session key.
 
-    In cloud mode, creates a Browserbase session with proxies enabled.
-    In local mode, generates a session name for agent-browser --session.
+    By default, starts or reuses local CloakBrowser cloakserve and returns a
+    CDP session. Explicit CDP overrides still return an override CDP session.
     Also starts the inactivity cleanup thread and updates activity tracking.
     Thread-safe: multiple subagents can call this concurrently.
 
     Args:
-        task_id: Session key.  Normally the task_id as-is, but may carry the
-            ``::local`` suffix for the hybrid-routing local sidecar — in that
-            case the cloud provider is skipped even when one is configured,
-            and a local Chromium session is created instead.
+        task_id: Session key.  Normally the task_id as-is. Historical
+            ``::local`` sidecar keys are treated as ordinary CloakBrowser
+            session keys when the CloakBrowser default is active.
 
     Returns:
-        Dict with session_name (always), bb_session_id + cdp_url (cloud only)
+        Dict with session_name, cdp_url, preview_url, and feature metadata.
     """
     if task_id is None:
         task_id = "default"
@@ -2029,54 +2057,12 @@ def _get_session_info(task_id: Optional[str] = None) -> Dict[str, Any]:
         if task_id in _active_sessions:
             return _active_sessions[task_id]
 
-    # Hybrid routing: session keys ending with ``::local`` force a local
-    # Chromium regardless of the globally-configured cloud provider.  Public
-    # URLs in the same conversation continue to use the cloud session under
-    # the bare task_id key.
-    force_local = _is_local_sidecar_key(task_id)
-
     # Create session outside the lock (network call in cloud mode)
     cdp_override = _get_cdp_override()
-    if cdp_override and not force_local:
+    if cdp_override:
         session_info = _create_cdp_session(task_id, cdp_override)
-    elif force_local:
-        session_info = _create_local_session(task_id)
     else:
-        provider = _get_cloud_provider()
-        if provider is None:
-            session_info = _create_local_session(task_id)
-        else:
-            try:
-                session_info = provider.create_session(task_id)
-                # Validate cloud provider returned a usable session
-                if not session_info or not isinstance(session_info, dict):
-                    raise ValueError(f"Cloud provider returned invalid session: {session_info!r}")
-                if session_info.get("cdp_url"):
-                    # Some cloud providers (including Browser-Use v3) return an HTTP
-                    # CDP discovery URL instead of a raw websocket endpoint.
-                    session_info = dict(session_info)
-                    session_info["cdp_url"] = _resolve_cdp_override(str(session_info["cdp_url"]))
-            except Exception as e:
-                provider_name = type(provider).__name__
-                logger.warning(
-                    "Cloud provider %s failed (%s); attempting fallback to local "
-                    "Chromium for task %s",
-                    provider_name, e, task_id,
-                    exc_info=True,
-                )
-                try:
-                    session_info = _create_local_session(task_id)
-                except Exception as local_error:
-                    raise RuntimeError(
-                        f"Cloud provider {provider_name} failed ({e}) and local "
-                        f"fallback also failed ({local_error})"
-                    ) from e
-                # Mark session as degraded for observability
-                if isinstance(session_info, dict):
-                    session_info = dict(session_info)
-                    session_info["fallback_from_cloud"] = True
-                    session_info["fallback_reason"] = str(e)
-                    session_info["fallback_provider"] = provider_name
+        session_info = _create_cloakbrowser_session(task_id)
 
     with _cleanup_lock:
         # Double-check: another thread may have created a session while we
@@ -2089,12 +2075,7 @@ def _get_session_info(task_id: Optional[str] = None) -> Dict[str, Any]:
         session_info.setdefault("owner_task_id", _bare_task_id_for_session_key(task_id))
         _active_sessions[task_id] = session_info
 
-    # Lazy-start the CDP supervisor now that the session exists (if the
-    # backend surfaces a CDP URL via override or session_info["cdp_url"]).
-    # Idempotent; swallows errors. See _ensure_cdp_supervisor for details.
-    # Skip for local sidecars — they have no CDP URL.
-    if not force_local:
-        _ensure_cdp_supervisor(task_id)
+    _ensure_cdp_supervisor(task_id)
 
     return session_info
 
@@ -2257,7 +2238,7 @@ def _extract_screenshot_path_from_text(text: str) -> Optional[str]:
 def _run_browser_command(
     task_id: str,
     command: str,
-    args: List[str] = None,
+    args: Optional[List[str]] = None,
     timeout: Optional[int] = None,
     _engine_override: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -2784,7 +2765,7 @@ def browser_navigate(url: str, task_id: Optional[str] = None) -> str:
         })
 
     # Camofox backend — delegate after safety checks pass
-    if _is_camofox_mode():
+    if _is_camofox_mode() and not _cloakbrowser_default_active():
         from tools.browser_camofox import camofox_navigate
         return camofox_navigate(url, task_id)
 
@@ -3142,7 +3123,7 @@ def browser_scroll(direction: str, task_id: Optional[str] = None) -> str:
         from tools.browser_camofox import camofox_scroll
         # Camofox REST API doesn't support pixel args; use repeated calls
         _SCROLL_REPEATS = 5
-        result = None
+        result = ""
         for _ in range(_SCROLL_REPEATS):
             result = camofox_scroll(direction, task_id)
         return result
@@ -3720,8 +3701,10 @@ def _camofox_eval(expression: str, task_id: Optional[str] = None) -> str:
     from tools.browser_camofox import _ensure_tab, _post
     try:
         tab_info = _ensure_tab(task_id or "default")
-        tab_id = tab_info.get("tab_id") or tab_info.get("id")
-        user_id = tab_info["user_id"]
+        tab_id = str(tab_info.get("tab_id") or tab_info.get("id") or "")
+        if not tab_id:
+            raise RuntimeError("Camofox tab is missing an id")
+        user_id = str(tab_info["user_id"])
         resp = _post(f"/tabs/{tab_id}/evaluate", body={"expression": expression, "userId": user_id})
 
         # Camofox returns the result in a JSON envelope
@@ -3986,6 +3969,7 @@ def browser_vision(question: str, annotate: bool = False, task_id: Optional[str]
             # can still produce the standard fallback metadata/error.
             _lp_prerouted = False
 
+    result: Dict[str, Any] = {}
     try:
         screenshots_dir.mkdir(parents=True, exist_ok=True)
 
@@ -4321,6 +4305,13 @@ def _cleanup_single_browser_session(task_id: str) -> None:
             logger.debug("agent-browser close command completed for task %s", task_id)
         except Exception as e:
             logger.warning("agent-browser close failed for task %s: %s", task_id, e)
+
+        cloakbrowser_seed = session_info.get("cloakbrowser_seed")
+        if isinstance(cloakbrowser_seed, str):
+            try:
+                cloakbrowser_runtime.delete_seed(cloakbrowser_seed)
+            except Exception as e:
+                logger.warning("CloakBrowser seed cleanup failed for task %s: %s", task_id, e)
 
         # Now remove from tracking under lock
         with _cleanup_lock:

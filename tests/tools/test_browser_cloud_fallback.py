@@ -1,9 +1,4 @@
-"""Tests for cloud browser provider runtime fallback to local Chromium.
-
-Covers the fallback logic in _get_session_info() when a cloud provider
-is configured but fails at runtime (issue #10883).
-"""
-import logging
+"""Tests for mandatory CloakBrowser session creation when cloud providers exist."""
 from unittest.mock import Mock
 
 import pytest
@@ -20,28 +15,37 @@ def _reset_session_state(monkeypatch):
     monkeypatch.setattr(browser_tool, "_update_session_activity", lambda t: None)
 
 
-class TestCloudProviderRuntimeFallback:
-    """Tests for _get_session_info cloud → local fallback."""
+def _cloak_session(task_id: str) -> dict:
+    return {
+        "session_name": f"cloak-{task_id}",
+        "bb_session_id": None,
+        "cdp_url": f"ws://127.0.0.1:9222/devtools/browser/{task_id}",
+        "features": {"cloakbrowser": True},
+    }
 
-    def test_cloud_failure_falls_back_to_local(self, monkeypatch):
-        """When cloud provider.create_session raises, fall back to local."""
+
+class TestCloudProviderSkippedByCloakBrowserDefault:
+    """Tests for _get_session_info cloud-provider bypass."""
+
+    def test_cloud_failure_is_skipped_for_cloakbrowser_default(self, monkeypatch):
+        """A broken cloud provider is not consulted when CloakBrowser is default."""
         _reset_session_state(monkeypatch)
 
         provider = Mock()
         provider.create_session.side_effect = RuntimeError("401 Unauthorized")
         monkeypatch.setattr(browser_tool, "_get_cloud_provider", lambda: provider)
         monkeypatch.setattr(browser_tool, "_get_cdp_override", lambda: None)
+        monkeypatch.setattr(browser_tool, "_create_cloakbrowser_session", _cloak_session)
 
         session = browser_tool._get_session_info("task-1")
 
-        assert session["fallback_from_cloud"] is True
-        assert "401 Unauthorized" in session["fallback_reason"]
-        assert session["fallback_provider"] == "Mock"
-        assert session["features"]["local"] is True
-        assert session["cdp_url"] is None
+        provider.create_session.assert_not_called()
+        assert session["features"]["cloakbrowser"] is True
+        assert "fallback_from_cloud" not in session
+        assert session["cdp_url"] == "ws://127.0.0.1:9222/devtools/browser/task-1"
 
-    def test_cloud_success_no_fallback(self, monkeypatch):
-        """When cloud succeeds, no fallback markers are present."""
+    def test_cloud_success_is_still_skipped(self, monkeypatch):
+        """A healthy cloud provider still does not override CloakBrowser default."""
         _reset_session_state(monkeypatch)
 
         provider = Mock()
@@ -53,15 +57,18 @@ class TestCloudProviderRuntimeFallback:
         }
         monkeypatch.setattr(browser_tool, "_get_cloud_provider", lambda: provider)
         monkeypatch.setattr(browser_tool, "_get_cdp_override", lambda: None)
+        monkeypatch.setattr(browser_tool, "_create_cloakbrowser_session", _cloak_session)
 
         session = browser_tool._get_session_info("task-2")
 
-        assert session["session_name"] == "cloud-sess"
+        provider.create_session.assert_not_called()
+        assert session["session_name"] == "cloak-task-2"
+        assert session["features"]["cloakbrowser"] is True
         assert "fallback_from_cloud" not in session
         assert "fallback_reason" not in session
 
-    def test_cloud_and_local_both_fail(self, monkeypatch):
-        """When both cloud and local fail, raise RuntimeError with both contexts."""
+    def test_cloakbrowser_failure_propagates_without_cloud_fallback(self, monkeypatch):
+        """CloakBrowser startup failure is terminal instead of falling back to cloud."""
         _reset_session_state(monkeypatch)
 
         provider = Mock()
@@ -69,23 +76,25 @@ class TestCloudProviderRuntimeFallback:
         monkeypatch.setattr(browser_tool, "_get_cloud_provider", lambda: provider)
         monkeypatch.setattr(browser_tool, "_get_cdp_override", lambda: None)
         monkeypatch.setattr(
-            browser_tool, "_create_local_session",
-            Mock(side_effect=OSError("no chromium")),
+            browser_tool, "_create_cloakbrowser_session",
+            Mock(side_effect=RuntimeError("cloak boom")),
         )
 
-        with pytest.raises(RuntimeError, match="cloud boom.*local.*no chromium"):
+        with pytest.raises(RuntimeError, match="cloak boom"):
             browser_tool._get_session_info("task-3")
+        provider.create_session.assert_not_called()
 
-    def test_no_provider_uses_local_directly(self, monkeypatch):
-        """When no cloud provider is configured, local mode is used with no fallback markers."""
+    def test_no_provider_uses_cloakbrowser_directly(self, monkeypatch):
+        """No provider still creates a CloakBrowser session."""
         _reset_session_state(monkeypatch)
 
         monkeypatch.setattr(browser_tool, "_get_cloud_provider", lambda: None)
         monkeypatch.setattr(browser_tool, "_get_cdp_override", lambda: None)
+        monkeypatch.setattr(browser_tool, "_create_cloakbrowser_session", _cloak_session)
 
         session = browser_tool._get_session_info("task-4")
 
-        assert session["features"]["local"] is True
+        assert session["features"]["cloakbrowser"] is True
         assert "fallback_from_cloud" not in session
 
     def test_cdp_override_bypasses_provider(self, monkeypatch):
@@ -95,14 +104,17 @@ class TestCloudProviderRuntimeFallback:
         provider = Mock()
         monkeypatch.setattr(browser_tool, "_get_cloud_provider", lambda: provider)
         monkeypatch.setattr(browser_tool, "_get_cdp_override", lambda: "ws://host:9222/devtools/browser/abc")
+        create_cloakbrowser = Mock(side_effect=AssertionError("CloakBrowser default should not run for explicit CDP"))
+        monkeypatch.setattr(browser_tool, "_create_cloakbrowser_session", create_cloakbrowser)
 
         session = browser_tool._get_session_info("task-5")
 
         provider.create_session.assert_not_called()
+        create_cloakbrowser.assert_not_called()
         assert session["cdp_url"] == "ws://host:9222/devtools/browser/abc"
 
-    def test_fallback_logs_warning_with_provider_name(self, monkeypatch, caplog):
-        """Fallback emits a warning log with the provider class name and error."""
+    def test_skipping_cloud_default_emits_no_fallback_warning(self, monkeypatch, caplog):
+        """Skipping cloud for CloakBrowser should not look like a provider failure."""
         _reset_session_state(monkeypatch)
 
         BrowserUseProviderFake = type("BrowserUseProvider", (), {
@@ -111,16 +123,16 @@ class TestCloudProviderRuntimeFallback:
         provider = BrowserUseProviderFake()
         monkeypatch.setattr(browser_tool, "_get_cloud_provider", lambda: provider)
         monkeypatch.setattr(browser_tool, "_get_cdp_override", lambda: None)
+        monkeypatch.setattr(browser_tool, "_create_cloakbrowser_session", _cloak_session)
 
-        with caplog.at_level(logging.WARNING, logger="tools.browser_tool"):
+        with caplog.at_level("WARNING", logger="tools.browser_tool"):
             session = browser_tool._get_session_info("task-6")
 
-        assert session["fallback_from_cloud"] is True
-        assert any("BrowserUseProvider" in r.message and "timeout" in r.message
-                    for r in caplog.records)
+        assert session["features"]["cloakbrowser"] is True
+        assert not any("BrowserUseProvider" in r.message and "timeout" in r.message for r in caplog.records)
 
-    def test_cloud_failure_does_not_poison_next_task(self, monkeypatch):
-        """A fallback for one task_id doesn't affect a new task_id when cloud recovers."""
+    def test_provider_state_does_not_affect_next_cloakbrowser_task(self, monkeypatch):
+        """Provider flakiness does not affect CloakBrowser task sessions."""
         _reset_session_state(monkeypatch)
 
         call_count = 0
@@ -141,26 +153,27 @@ class TestCloudProviderRuntimeFallback:
         provider.create_session.side_effect = create_session_flaky
         monkeypatch.setattr(browser_tool, "_get_cloud_provider", lambda: provider)
         monkeypatch.setattr(browser_tool, "_get_cdp_override", lambda: None)
+        monkeypatch.setattr(browser_tool, "_create_cloakbrowser_session", _cloak_session)
 
-        # First call fails → fallback
         s1 = browser_tool._get_session_info("task-a")
-        assert s1["fallback_from_cloud"] is True
+        assert s1["session_name"] == "cloak-task-a"
 
-        # Second call (different task) → cloud succeeds
         s2 = browser_tool._get_session_info("task-b")
-        assert "fallback_from_cloud" not in s2
-        assert s2["session_name"] == "cloud-ok"
+        assert s2["session_name"] == "cloak-task-b"
+        provider.create_session.assert_not_called()
 
-    def test_cloud_returns_invalid_session_triggers_fallback(self, monkeypatch):
-        """Cloud provider returning None or empty dict triggers fallback."""
+    def test_invalid_cloud_session_is_irrelevant_when_cloakbrowser_default_runs(self, monkeypatch):
+        """Invalid cloud session data is ignored because cloud is not used."""
         _reset_session_state(monkeypatch)
 
         provider = Mock()
         provider.create_session.return_value = None
         monkeypatch.setattr(browser_tool, "_get_cloud_provider", lambda: provider)
         monkeypatch.setattr(browser_tool, "_get_cdp_override", lambda: None)
+        monkeypatch.setattr(browser_tool, "_create_cloakbrowser_session", _cloak_session)
 
         session = browser_tool._get_session_info("task-7")
 
-        assert session["fallback_from_cloud"] is True
-        assert "invalid session" in session["fallback_reason"]
+        provider.create_session.assert_not_called()
+        assert session["features"]["cloakbrowser"] is True
+        assert "fallback_reason" not in session
