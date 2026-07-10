@@ -130,14 +130,25 @@ def _base_command(root: Path, cloakserve: Path) -> list[str]:
     return [str(cloakserve)]
 
 
+def _headless_enabled() -> bool:
+    # Default to a visible (headed) browser so the operator can watch the
+    # live session and the desktop peek panel has a real window to mirror.
+    # Opt back into headless with CLOAKBROWSER_HEADLESS=1/true/yes/on.
+    raw = os.environ.get("CLOAKBROWSER_HEADLESS", "").strip().lower()
+    return raw in ("1", "true", "yes", "on")
+
+
 def launch_command(root: Path, cloakserve: Path) -> list[str]:
     idle_timeout = max(0, _env_int("CLOAKBROWSER_IDLE_TIMEOUT", DEFAULT_IDLE_TIMEOUT))
-    return [
+    cmd = [
         *_base_command(root, cloakserve),
         "--host=127.0.0.1",
         f"--port={port()}",
         f"--idle-timeout={idle_timeout}",
     ]
+    if not _headless_enabled():
+        cmd.append("--headless=false")
+    return cmd
 
 
 def launch_cloakserve() -> None:
