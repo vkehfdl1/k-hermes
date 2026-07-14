@@ -746,14 +746,14 @@ class TestPinTransition:
         GatewayRunner._HONCHO_CACHE_BUSTING_MEMO = {}
         cfg_path = tmp_path / "honcho.json"
         monkeypatch.setenv("HERMES_HOME", str(tmp_path))
-        # Force every from_global_config call to use this test's config path.
-        # GatewayRunner imports HonchoClientConfig by name inside the method,
-        # so patch the class method on the source module before extraction.
         from plugins.memory.honcho.client import HonchoClientConfig as _HCC
-        _orig = _HCC.from_global_config
+        _orig = _HCC.from_global_config.__func__
         def _from_path(cls, host=None, config_path=None):
-            return _orig(host=host, config_path=cfg_path)
-        monkeypatch.setattr(_HCC, "from_global_config", classmethod(_from_path))
+            return _orig(cls, host=host, config_path=cfg_path)
+        monkeypatch.setattr(
+            "plugins.memory.honcho.client.HonchoClientConfig.from_global_config",
+            classmethod(_from_path),
+        )
 
         cfg_path.write_text(json.dumps({"apiKey": "k", "peerName": "Igor", "pinPeerName": True}))
         sig_pinned = GatewayRunner._extract_cache_busting_config({"memory": {"provider": "honcho"}})
@@ -770,14 +770,14 @@ class TestPinTransition:
         GatewayRunner._HONCHO_CACHE_BUSTING_MEMO = {}
         cfg_path = tmp_path / "honcho.json"
         monkeypatch.setenv("HERMES_HOME", str(tmp_path))
-        # Force every from_global_config call to use this test's config path.
-        # GatewayRunner imports HonchoClientConfig by name inside the method,
-        # so patch the class method on the source module before extraction.
         from plugins.memory.honcho.client import HonchoClientConfig as _HCC
-        _orig = _HCC.from_global_config
+        _orig = _HCC.from_global_config.__func__
         def _from_path(cls, host=None, config_path=None):
-            return _orig(host=host, config_path=cfg_path)
-        monkeypatch.setattr(_HCC, "from_global_config", classmethod(_from_path))
+            return _orig(cls, host=host, config_path=cfg_path)
+        monkeypatch.setattr(
+            "plugins.memory.honcho.client.HonchoClientConfig.from_global_config",
+            classmethod(_from_path),
+        )
 
         cfg_path.write_text(json.dumps({"apiKey": "k", "peerName": "Igor"}))
         sig_no_aliases = GatewayRunner._extract_cache_busting_config({"memory": {"provider": "honcho"}})
@@ -798,14 +798,14 @@ class TestPinTransition:
         GatewayRunner._HONCHO_CACHE_BUSTING_MEMO = {}
         cfg_path = tmp_path / "honcho.json"
         monkeypatch.setenv("HERMES_HOME", str(tmp_path))
-        # Force every from_global_config call to use this test's config path.
-        # GatewayRunner imports HonchoClientConfig by name inside the method,
-        # so patch the class method on the source module before extraction.
         from plugins.memory.honcho.client import HonchoClientConfig as _HCC
-        _orig = _HCC.from_global_config
+        _orig = _HCC.from_global_config.__func__
         def _from_path(cls, host=None, config_path=None):
-            return _orig(host=host, config_path=cfg_path)
-        monkeypatch.setattr(_HCC, "from_global_config", classmethod(_from_path))
+            return _orig(cls, host=host, config_path=cfg_path)
+        monkeypatch.setattr(
+            "plugins.memory.honcho.client.HonchoClientConfig.from_global_config",
+            classmethod(_from_path),
+        )
 
         cfg_path.write_text(json.dumps({"apiKey": "k", "peerName": "Igor"}))
         sig_no_prefix = GatewayRunner._extract_cache_busting_config({"memory": {"provider": "honcho"}})
@@ -832,14 +832,14 @@ class TestPinTransition:
         GatewayRunner._HONCHO_CACHE_BUSTING_MEMO = {}
         cfg_path = tmp_path / "honcho.json"
         monkeypatch.setenv("HERMES_HOME", str(tmp_path))
-        # Force every from_global_config call to use this test's config path.
-        # GatewayRunner imports HonchoClientConfig by name inside the method,
-        # so patch the class method on the source module before extraction.
         from plugins.memory.honcho.client import HonchoClientConfig as _HCC
-        _orig = _HCC.from_global_config
+        _orig = _HCC.from_global_config.__func__
         def _from_path(cls, host=None, config_path=None):
-            return _orig(host=host, config_path=cfg_path)
-        monkeypatch.setattr(_HCC, "from_global_config", classmethod(_from_path))
+            return _orig(cls, host=host, config_path=cfg_path)
+        monkeypatch.setattr(
+            "plugins.memory.honcho.client.HonchoClientConfig.from_global_config",
+            classmethod(_from_path),
+        )
 
         cfg_path.write_text(json.dumps({
             "apiKey": "k",
