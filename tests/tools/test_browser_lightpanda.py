@@ -109,6 +109,7 @@ class TestShouldInjectEngine:
         from tools.browser_tool import _should_inject_engine
         with patch("tools.browser_tool._is_camofox_mode", return_value=False), \
              patch("tools.browser_tool._get_cdp_override", return_value=""), \
+             patch("tools.browser_tool._cloakbrowser_default_active", return_value=False), \
              patch("tools.browser_tool._get_cloud_provider", return_value=None):
             assert _should_inject_engine("lightpanda") is True
 
@@ -116,6 +117,7 @@ class TestShouldInjectEngine:
         from tools.browser_tool import _should_inject_engine
         with patch("tools.browser_tool._is_camofox_mode", return_value=False), \
              patch("tools.browser_tool._get_cdp_override", return_value=""), \
+             patch("tools.browser_tool._cloakbrowser_default_active", return_value=False), \
              patch("tools.browser_tool._get_cloud_provider", return_value=None):
             assert _should_inject_engine("chrome") is True
 

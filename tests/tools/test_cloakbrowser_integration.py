@@ -103,6 +103,7 @@ def test_default_browser_session_uses_cloakbrowser_cdp(monkeypatch, tmp_path):
         "--host=127.0.0.1",
         "--port=9222",
         "--idle-timeout=600",
+        "--headless=false",
     ]
     assert popen.call_args.kwargs["stdin"] is subprocess.DEVNULL
     assert popen.call_args.kwargs["cwd"] == str(root)
@@ -140,6 +141,7 @@ def test_cloakserve_launch_uses_uv_serve_environment(monkeypatch, tmp_path):
         "--host=127.0.0.1",
         "--port=9222",
         "--idle-timeout=600",
+        "--headless=false",
     ]
     assert popen.call_args.kwargs["env"]["CLOAKBROWSER_PEEK_TOKEN"] == PEEK_TOKEN
 
@@ -251,6 +253,7 @@ def test_cloakserve_launch_uses_idle_timeout_and_peek_token_env(monkeypatch, tmp
         "--host=127.0.0.1",
         "--port=9222",
         "--idle-timeout=42",
+        "--headless=false",
     ]
     assert popen.call_args.kwargs["env"]["CLOAKBROWSER_PEEK_TOKEN"] == "operator-token"
     assert popen.call_args.kwargs["env"]["CLOAKSERVE_PEEK_TOKEN"] == "operator-token"
