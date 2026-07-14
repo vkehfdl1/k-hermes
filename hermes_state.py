@@ -6589,6 +6589,78 @@ class SessionDB:
 
         self._execute_write(_do)
 
+    def insert_committed_desktop_output(
+        self,
+        *,
+        session_id: str,
+        task_id: str,
+        message_id: str,
+        text: str = "",
+        attachments: List[Dict[str, Any]],
+    ) -> None:
+        """Insert an assistant desktop message + COMMITTED output attachments.
+
+        Agent-produced artifacts already live on local disk under agent
+        control, so they skip the inbound 2PC (no PREPARED window): blobs are
+        promoted by the caller before this row insert makes them visible.
+        """
+        now = time.time()
+
+        def _do(conn):
+            existing = conn.execute(
+                "SELECT id FROM sessions WHERE id = ?", (session_id,)
+            ).fetchone()
+            if existing is None:
+                conn.execute(
+                    "INSERT INTO sessions (id, source, started_at, message_count) "
+                    "VALUES (?, 'desktop', ?, 0)",
+                    (session_id, now),
+                )
+            conn.execute(
+                """INSERT OR IGNORE INTO desktop_tasks
+                   (task_id, session_id, state, terminal_kind, created_at, updated_at)
+                   VALUES (?, ?, 'running', NULL, ?, ?)""",
+                (task_id, session_id, now, now),
+            )
+            conn.execute(
+                """INSERT OR REPLACE INTO desktop_task_messages
+                   (task_id, message_id, role, text, created_at)
+                   VALUES (?, ?, 'assistant', ?, ?)""",
+                (task_id, message_id, text or "", now),
+            )
+            for att in attachments or []:
+                conn.execute(
+                    """INSERT INTO message_attachments (
+                           attachment_id, session_id, message_id, task_id, ordinal,
+                           mime_type, display_name, content_sha256, byte_size,
+                           ciphertext_size, blob_key, preview_key, preview_available,
+                           direction, state, key_id, key_version, soft_deleted,
+                           created_at, committed_at, temp_path, preview_temp_path
+                       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'output',
+                                 'COMMITTED', ?, ?, 0, ?, ?, NULL, NULL)""",
+                    (
+                        att["attachment_id"],
+                        att.get("session_id") or session_id,
+                        att.get("message_id") or message_id,
+                        att.get("task_id") or task_id,
+                        int(att.get("ordinal") or 0),
+                        att["mime_type"],
+                        att["display_name"],
+                        att["content_sha256"],
+                        int(att.get("byte_size") or 0),
+                        int(att.get("ciphertext_size") or 0),
+                        att.get("blob_key"),
+                        att.get("preview_key"),
+                        1 if att.get("preview_available") else 0,
+                        att.get("key_id"),
+                        att.get("key_version"),
+                        now,
+                        now,
+                    ),
+                )
+
+        self._execute_write(_do)
+
     def get_desktop_turn_acceptance(self, acceptance_nonce: str) -> Optional[Dict[str, Any]]:
         with self._lock:
             row = self._conn.execute(

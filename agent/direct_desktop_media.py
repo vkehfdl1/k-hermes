@@ -563,6 +563,122 @@ class DirectDesktopMediaService:
                 pass
         self.db.undelete_message_attachment(attachment_id)
 
+    def ingest_output_artifacts(
+        self,
+        *,
+        session_id: str,
+        task_id: str,
+        message_id: str,
+        artifacts: Sequence[Mapping[str, Any]],
+        text: str = "",
+    ) -> List[Dict[str, Any]]:
+        """Persist agent-produced local files as COMMITTED output attachments.
+
+        Outbound artifacts skip the inbound 2PC: the files already exist on
+        local disk under agent control, so each blob (plus an image preview
+        when small enough) is encrypted, promoted, and made visible in one
+        step, linked to an assistant desktop message. Unreadable, empty, or
+        >25MiB files are skipped. Returns ``media.output.created``-shaped
+        briefs for the runner to emit.
+        """
+        import mimetypes
+
+        briefs: List[Dict[str, Any]] = []
+        rows: List[Dict[str, Any]] = []
+        ordinal = 0
+        for art in artifacts:
+            path = Path(str(art.get("path") or "")).expanduser()
+            try:
+                data = path.read_bytes()
+            except OSError:
+                logger.info("output artifact unreadable, skipping: %s", path)
+                continue
+            if not data or len(data) > 26_214_400:
+                logger.info(
+                    "output artifact empty/oversized, skipping: %s (%d bytes)",
+                    path,
+                    len(data),
+                )
+                continue
+            mime = str(art.get("mime_type") or "").strip() or (
+                mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+            )
+            display = str(art.get("display_name") or path.name)
+            sha = content_address(data)
+            try:
+                prepared = self.store.write_encrypted_temp(
+                    data,
+                    mime_type=mime,
+                    kind="blob",
+                    blob_key=sha,
+                    session_id=session_id,
+                    reserve_quota=True,
+                )
+                self.store.promote_temp(prepared)
+            except (QuotaExceeded, MediaStoreError) as exc:
+                logger.warning("output artifact persist failed (%s): %s", path, exc)
+                continue
+            preview_key = None
+            preview_available = False
+            if mime.startswith("image/") and len(data) <= 5_242_880:
+                try:
+                    prev = self.store.write_encrypted_temp(
+                        data,
+                        mime_type=mime,
+                        kind="preview",
+                        blob_key=sha,
+                        session_id=session_id,
+                        reserve_quota=True,
+                    )
+                    self.store.promote_temp(prev)
+                    preview_key = prev.blob_key
+                    preview_available = True
+                except (QuotaExceeded, MediaStoreError):
+                    pass
+            self.store.account_session_bytes(session_id, prepared.ciphertext_size)
+            attachment_id = str(uuid.uuid4())
+            rows.append(
+                {
+                    "attachment_id": attachment_id,
+                    "session_id": session_id,
+                    "message_id": message_id,
+                    "task_id": task_id,
+                    "ordinal": ordinal,
+                    "mime_type": mime,
+                    "display_name": display,
+                    "content_sha256": sha,
+                    "byte_size": len(data),
+                    "ciphertext_size": prepared.ciphertext_size,
+                    "blob_key": prepared.blob_key,
+                    "preview_key": preview_key,
+                    "preview_available": preview_available,
+                    "key_id": prepared.key_id,
+                    "key_version": prepared.key_version,
+                }
+            )
+            briefs.append(
+                {
+                    "attachmentId": attachment_id,
+                    "ordinal": ordinal,
+                    "mimeType": mime,
+                    "displayName": display,
+                    "previewAvailable": preview_available,
+                    "sessionId": session_id,
+                    "taskId": task_id,
+                    "messageId": message_id,
+                }
+            )
+            ordinal += 1
+        if rows:
+            self.db.insert_committed_desktop_output(
+                session_id=session_id,
+                task_id=task_id,
+                message_id=message_id,
+                text=text,
+                attachments=rows,
+            )
+        return briefs
+
     def get_preview(self, session_id: str, attachment_id: str) -> Dict[str, Any]:
         att = self._authorize_attachment(session_id, attachment_id)
         key = att.get("preview_key") or att.get("blob_key")

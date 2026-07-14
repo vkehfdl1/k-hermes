@@ -123,6 +123,58 @@ class InMemoryKeyBackend:
             return sorted(k for (p, k) in self._keys if p == profile_id)
 
 
+class FileKeyBackend:
+    """0600 key files under ``<hermes_home>/media/keys`` — no-keychain fallback.
+
+    Weaker than the OS keychain (the key rests beside the blobs, guarded only
+    by POSIX perms), but it keeps the at-rest encryption + ACL model working
+    across processes on hosts without the optional ``keyring`` package. The
+    previous behaviour — every process minting a fresh in-memory key — made
+    blobs undecryptable to any later preview/open process.
+    """
+
+    def __init__(self, keys_dir: Path) -> None:
+        self._keys_dir = Path(keys_dir)
+        self._lock = threading.Lock()
+
+    def _path(self, profile_id: str, key_id: str) -> Path:
+        safe = f"{profile_id}.{key_id}".replace("/", "_").replace("\\", "_")
+        return self._keys_dir / f"{safe}.key"
+
+    def get(self, profile_id: str, key_id: str) -> Optional[bytes]:
+        path = self._path(profile_id, key_id)
+        try:
+            raw = path.read_text().strip()
+        except OSError:
+            return None
+        try:
+            key = bytes.fromhex(raw)
+        except ValueError:
+            return None
+        return key if len(key) == 32 else None
+
+    def set(self, profile_id: str, key_id: str, key: bytes) -> None:
+        if len(key) != 32:
+            raise ValueError("media profile key must be 32 bytes")
+        with self._lock:
+            _secure_mkdir(self._keys_dir)
+            _write_private_file(self._path(profile_id, key_id), key.hex().encode())
+
+    def delete(self, profile_id: str, key_id: str) -> None:
+        try:
+            self._path(profile_id, key_id).unlink()
+        except OSError:
+            return
+
+    def list_key_ids(self, profile_id: str) -> Sequence[str]:
+        prefix = f"{profile_id}."
+        try:
+            names = [p.stem for p in self._keys_dir.glob("*.key")]
+        except OSError:
+            return []
+        return sorted(n[len(prefix):] for n in names if n.startswith(prefix))
+
+
 class OSKeychainBackend:
     """Best-effort OS keychain using the optional ``keyring`` package.
 
@@ -470,11 +522,21 @@ class DirectDesktopMediaStore:
         if profile_id is None:
             profile_id = os.environ.get("HERMES_PROFILE", "default") or "default"
         if key_backend is None:
-            # Prefer OS keychain; fall back to in-memory only in HERMES_TEST.
+            # Prefer OS keychain; without the optional ``keyring`` package use
+            # a 0600 key file so keys stay stable ACROSS processes (in-memory
+            # keys made blobs undecryptable to later preview/open calls).
+            # In-memory only under test runners.
             if os.environ.get("HERMES_TEST") or os.environ.get("PYTEST_CURRENT_TEST"):
                 key_backend = InMemoryKeyBackend()
             else:
-                key_backend = OSKeychainBackend()
+                try:
+                    import keyring  # type: ignore  # noqa: F401
+
+                    key_backend = OSKeychainBackend()
+                except Exception:
+                    key_backend = FileKeyBackend(
+                        Path(hermes_home) / "media" / "keys"
+                    )
         return cls(
             Path(hermes_home),
             profile_id=str(profile_id),
