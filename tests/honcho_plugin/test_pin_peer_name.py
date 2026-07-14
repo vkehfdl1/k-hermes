@@ -788,6 +788,7 @@ class TestPinTransition:
             "peerName": "Igor",
             "runtimePeerPrefix": "telegram_",
         }))
+        os.utime(cfg_path, None)
         sig_with_prefix = GatewayRunner._extract_cache_busting_config({"memory": {"provider": "honcho"}})
 
         assert sig_no_prefix["honcho.runtime_peer_prefix"] != sig_with_prefix["honcho.runtime_peer_prefix"]
