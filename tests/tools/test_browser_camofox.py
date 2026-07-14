@@ -446,8 +446,9 @@ class TestBrowserToolRouting:
         mock_post.return_value = _mock_response(json_data={"tabId": "tab_rt", "url": "https://example.com"})
 
         from tools.browser_tool import browser_navigate
-        # Bypass SSRF check for test URL
-        with patch("tools.browser_tool._is_safe_url", return_value=True):
+        # Bypass SSRF check for test URL; disable CloakBrowser default so Camofox wins.
+        with patch("tools.browser_tool._is_safe_url", return_value=True), \
+             patch("tools.browser_tool._cloakbrowser_default_active", return_value=False):
             result = json.loads(browser_navigate("https://example.com", task_id="t_route"))
         assert result["success"] is True
 
