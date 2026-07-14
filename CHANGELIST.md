@@ -7,38 +7,32 @@ Upstream PRs are intentionally not opened for these items.
 
 ### CloakBrowser is the default local browser path
 - Default `browser_*` sessions start local **CloakBrowser** (`cloakserve` CDP) instead of stock Playwright Chromium / agent-browser alone.
-- Explicit CDP override still wins: `BROWSER_CDP_URL`, `browser.cdp_url`, `/browser connect`.
 - Runtime helper: `tools/cloakbrowser_runtime.py`.
-- Default launch is **headed** (visible window) so operators can watch sessions; opt into headless with `CLOAKBROWSER_HEADLESS=1`.
+- Default launch is **headed** (visible window); opt into headless with `CLOAKBROWSER_HEADLESS=1`.
 
-### Camofox local browser path removed
-- Deleted `tools/browser_camofox.py` and `tools/browser_camofox_state.py`.
-- Removed `CAMOFOX_*` env config, setup picker row, install/npm dependency, and runtime routing.
-- Explicit `browser.cloud_provider: camofox` is treated as unavailable.
-- Anti-detect browsing is CloakBrowser-only in k-hermes.
+### CDP override is NOT CloakBrowser fallback
+- `/browser connect`, `BROWSER_CDP_URL`, and `browser.cdp_url` attach browser tools to a **user-supplied Chromium DevTools endpoint**.
+- Typical uses: drive a real Chrome/Brave window you already opened, reuse a debug profile/cookies/login, or attach to a remote Chromium CDP port.
+- When set, this **wins over** CloakBrowser auto-launch for that process (disconnect / unset reverts to CloakBrowser default).
 
-### Browser Use cloud provider removed
-- Deleted in-tree plugin: `plugins/browser/browser_use/`.
-- Removed auto-detect preference for Browser Use (`BROWSER_USE_API_KEY` / Nous managed browser-use gateway no longer selects a cloud browser).
-- Removed setup/picker UX for “Nous Subscription (Browser Use cloud)”.
-- Removed `BROWSER_USE_API_KEY` from optional env catalog / status key list.
-- Legacy registry walk is now **browserbase-only** (Firecrawl remains explicit-config only).
-- Explicit `browser.cloud_provider: browser-use` is treated as **unavailable** (not remapped silently to another cloud vendor).
-- Local CloakBrowser remains the recommended path for bot-detection / CAPTCHA-avoidance work.
+### Removed browser backends
+- **Browser Use** cloud plugin removed (`plugins/browser/browser_use/`).
+- **Camofox** local Firefox/REST path removed (`tools/browser_camofox*.py`).
+- **Browserbase** cloud browser plugin removed (`plugins/browser/browserbase/`).
+- **Firecrawl cloud browser** plugin removed (`plugins/browser/firecrawl/`).
+  - Note: Firecrawl **web search/extract** (`plugins/web/firecrawl/`, `FIRECRAWL_API_KEY`) remains for `web_search` / `web_extract`. Only the browser-session backend is gone.
 
-### Remaining browser backends (after this change)
+### Remaining browser backends
 | Backend | Status in k-hermes |
 |---------|--------------------|
 | CloakBrowser (default local) | **Primary** |
-| CDP override (`/browser connect`) | Supported |
-| Browserbase cloud | Supported optional |
-| Firecrawl cloud browser | Supported explicit-only |
-| Browser Use cloud | **Removed** |
-| Camofox (local Firefox/Camoufox REST) | **Removed** |
+| CDP override (`/browser connect`) | Supported (manual attach) |
+| Third-party browser plugins | Optional (`~/.hermes/plugins/browser/`) |
+| Browserbase / Firecrawl browser / Browser Use / Camofox | **Removed** |
 
 ## Direct desktop
 - Encrypted media plane + no-strip route work under `agent/direct_desktop_*` and related session/state paths (see recent commits on `main`).
 
 ## Policy notes
-- Do **not** open upstream PRs for CloakBrowser-defaulting or Browser Use removal; these are fork product decisions.
-- Portal entitlement category name `browser-use` may still appear in JWT/tool-coverage enums (upstream Nous Portal schema). k-hermes no longer routes runtime browser sessions through that vendor.
+- Do **not** open upstream PRs for these browser backend product decisions.
+- Portal JWT coverage category names such as `browser-use` / `firecrawl` may still appear as entitlement enums; k-hermes does not route `browser_*` sessions through removed vendors.

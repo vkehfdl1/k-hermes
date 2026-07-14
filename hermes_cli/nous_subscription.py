@@ -183,7 +183,7 @@ def _local_browser_runnable() -> bool:
     This mirrors the local-mode tail of
     :func:`tools.browser_tool.check_browser_requirements`, so the setup/status
     surfaces advertise local browser readiness only when the runtime would
-    actually run it. Cloud providers (Browserbase, Firecrawl) host
+    actually run it. Optional third-party cloud browser plugins host
     their own Chromium and therefore gate on :func:`_has_agent_browser` alone.
     """
     if not _has_agent_browser():
@@ -201,8 +201,6 @@ def _local_browser_runnable() -> bool:
 
 def _browser_label(current_provider: str) -> str:
     mapping = {
-        "browserbase": "Browserbase",
-        "firecrawl": "Firecrawl",
         "local": "Local browser",
     }
     return mapping.get(current_provider or "local", current_provider or "Local browser")
@@ -272,17 +270,9 @@ def _resolve_browser_feature_state(
     """
     if browser_provider_explicit:
         current_provider = browser_provider or "local"
-        if current_provider == "browserbase":
-            available = bool(browser_local_available and direct_browserbase)
-            active = bool(browser_tool_enabled and available)
-            return current_provider, available, active, False
-        if current_provider == "browser-use":
-            # Browser Use was removed from k-hermes; treat as unavailable.
+        if current_provider in {"browserbase", "browser-use", "firecrawl", "camofox"}:
+            # Bundled cloud/anti-detect browser providers removed from k-hermes.
             return current_provider, False, False, False
-        if current_provider == "firecrawl":
-            available = bool(browser_local_available and direct_firecrawl)
-            active = bool(browser_tool_enabled and available)
-            return current_provider, available, active, False
         if current_provider == "camofox":
             # Camofox removed from k-hermes.
             return current_provider, False, False, False
@@ -294,11 +284,6 @@ def _resolve_browser_feature_state(
 
     # Browser Use removed from k-hermes — do not auto-select managed/direct
     # browser-use even when Nous gateway credentials are present.
-
-    if direct_browserbase:
-        available = bool(browser_local_available)
-        active = bool(browser_tool_enabled and available)
-        return "browserbase", available, active, False
 
     available = bool(browser_local_runnable)
     active = bool(browser_tool_enabled and available)
@@ -394,7 +379,7 @@ def get_nous_subscription_features(
     direct_fal_video = direct_fal  # same FAL_KEY; separate var so use_gateway is independent
     direct_openai_tts = bool(resolve_openai_audio_api_key())
     direct_elevenlabs = bool(get_env_value("ELEVENLABS_API_KEY"))
-    direct_browserbase = bool(get_env_value("BROWSERBASE_API_KEY") and get_env_value("BROWSERBASE_PROJECT_ID"))
+    direct_browserbase = False  # Browserbase browser provider removed from k-hermes
     direct_browser_use = bool(get_env_value("BROWSER_USE_API_KEY"))
     direct_modal = has_direct_modal_credentials()
 
@@ -871,9 +856,7 @@ def _get_gateway_direct_credentials() -> Dict[str, bool]:
             or get_env_value("GROQ_API_KEY")
             or get_env_value("MISTRAL_API_KEY")
         ),
-        "browser": bool(
-            get_env_value("BROWSERBASE_API_KEY") and get_env_value("BROWSERBASE_PROJECT_ID")
-        ),
+        "browser": False,  # no bundled cloud browser credentials in k-hermes
     }
 
 
@@ -883,7 +866,7 @@ _GATEWAY_DIRECT_LABELS = {
     "video_gen": "FAL key",
     "tts": "OpenAI/ElevenLabs key",
     "stt": "OpenAI/Groq/Mistral key",
-    "browser": "Browserbase key",
+    "browser": "cloud browser plugin",
 }
 
 _ALL_GATEWAY_KEYS = ("web", "image_gen", "video_gen", "tts", "stt", "browser")

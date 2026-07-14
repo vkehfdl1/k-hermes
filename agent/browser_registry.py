@@ -12,15 +12,8 @@ Active selection
 The active provider is chosen by configuration with this precedence:
 
 1. ``browser.cloud_provider`` in ``config.yaml`` (explicit override).
-2. Legacy preference order — ``browserbase`` only — filtered by availability.
-   Matches the k-hermes auto-detect order in
-   :func:`tools.browser_tool._get_cloud_provider` after Browser Use was removed.
-   ``firecrawl`` is
-   intentionally NOT in the legacy walk — users only get Firecrawl as a
-   cloud browser when they explicitly set ``browser.cloud_provider:
-   firecrawl``, matching pre-migration behaviour where Firecrawl was never
-   auto-selected.
-3. Otherwise ``None`` — the dispatcher falls back to local browser mode.
+2. Otherwise ``None`` — k-hermes ships no bundled cloud browser providers;
+   the dispatcher uses local CloakBrowser / CDP override.
 
 The explicit-config branch (rule 1) intentionally ignores ``is_available()``
 so the dispatcher surfaces a typed "X_API_KEY is not set" error to the user
@@ -98,14 +91,8 @@ def get_provider(name: str) -> Optional[BrowserProvider]:
 # ---------------------------------------------------------------------------
 
 
-# Legacy auto-detect order — used when no ``browser.cloud_provider`` is set.
-# Matches the pre-migration walk in :func:`tools.browser_tool._get_cloud_provider`.
-# Firecrawl is intentionally absent so users with ``FIRECRAWL_API_KEY`` set
-# for web-extract don't get silently routed to a paid cloud browser. See
-# :func:`_resolve` for the full rationale.
-_LEGACY_PREFERENCE = (
-    "browserbase",
-)
+# No bundled cloud browser auto-detect in k-hermes.
+_LEGACY_PREFERENCE = ()
 
 
 def _resolve(configured: Optional[str]) -> Optional[BrowserProvider]:

@@ -221,7 +221,7 @@ TIPS = [
     "Context files are capped at 20,000 characters with smart head/tail truncation.",
 
     # --- Browser ---
-    "Three browser providers: CloakBrowser/local Chromium, Browserbase, and Firecrawl.",
+    "Browser automation defaults to CloakBrowser; optional /browser connect for live CDP.",
     "CloakBrowser is the default anti-detection Chromium path in k-hermes.",
     "browser_navigate returns a page snapshot automatically — no need to call browser_snapshot after.",
     "browser_vision with annotate=true overlays numbered labels on interactive elements.",
@@ -304,7 +304,6 @@ TIPS = [
     "Ctrl+C has 5 priority tiers: cancel recording → cancel prompts → cancel picker → interrupt agent → exit.",
     "Every interrupt during an agent run is logged to ~/.hermes/interrupt_debug.log with timestamps.",
     "BROWSER_CDP_URL connects browser tools to any running Chromium-family browser — accepts WebSocket, HTTP, or host:port.",
-    "BROWSERBASE_ADVANCED_STEALTH=true enables advanced anti-detection with custom Chromium (Scale Plan).",
     "The CLI auto-switches to compact mode in terminals narrower than 80 columns.",
     "Quick commands support two types: exec (run shell command directly) and alias (redirect to another command).",
     "Per-task delegation model: delegation.model and delegation.provider in config route subagents to cheaper models.",

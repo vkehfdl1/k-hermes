@@ -5,8 +5,8 @@ Browser Tool Module
 
 This module provides browser automation tools using agent-browser CLI.  By
 default it connects agent-browser to local CloakBrowser CDP.  Explicit CDP
-overrides still win, while legacy cloud/local Chromium providers remain
-available behind their helper APIs.
+overrides (``/browser connect`` / ``BROWSER_CDP_URL`` / ``browser.cdp_url``)
+still win and attach to a user-supplied Chromium DevTools endpoint.
 
 The tool uses agent-browser's accessibility tree (ariaSnapshot) for text-based
 page representation, making it ideal for LLM agents without vision capabilities.
@@ -14,7 +14,7 @@ page representation, making it ideal for LLM agents without vision capabilities.
 Features:
 - **CloakBrowser CDP mode** (default): local stealth Chromium via cloakserve.
 - **Explicit CDP mode**: connect directly when BROWSER_CDP_URL/browser.cdp_url is set.
-- **Legacy provider helpers**: Browserbase, Firecrawl, and local Chromium code paths retained for compatibility.
+- **No bundled cloud browser providers** in k-hermes (Browserbase / Firecrawl browser / Browser Use removed).
 - Session isolation per task ID
 - Text-based page snapshots using accessibility tree
 - Element interaction via ref selectors (@e1, @e2, etc.)
@@ -22,15 +22,7 @@ Features:
 - Automatic cleanup of browser sessions
 
 Environment Variables:
-- BROWSERBASE_API_KEY: API key for direct Browserbase cloud mode
-- BROWSERBASE_PROJECT_ID: Project ID for direct Browserbase cloud mode
-- BROWSERBASE_PROXIES: Enable/disable residential proxies (default: "true")
-- BROWSERBASE_ADVANCED_STEALTH: Enable advanced stealth mode with custom Chromium,
-  requires Scale Plan (default: "false")
-- BROWSERBASE_KEEP_ALIVE: Enable keepAlive for session reconnection after disconnects,
-  requires paid plan (default: "true")
-- BROWSERBASE_SESSION_TIMEOUT: Custom session timeout in seconds (max 21600 = 6h).
-  Set to extend beyond project default. Common values: 600 (10min), 1800 (30min) (default: none)
+
 - CLOAKBROWSER_ROOT: Optional path to sibling CloakBrowser checkout containing bin/cloakserve
 - CLOAKBROWSER_PORT: Optional local cloakserve port (default: 9222)
 
@@ -77,13 +69,7 @@ from tools import cloakbrowser_runtime
 # means a compromised transitive dependency could read every Hermes secret
 # straight out of process.env.  Strip by default, then re-add only the
 # browser-backend keys the worker legitimately needs.
-_BROWSER_PASSTHROUGH_KEYS: tuple[str, ...] = (
-    "BROWSERBASE_API_KEY",
-    "BROWSERBASE_PROJECT_ID",
-    "FIRECRAWL_API_KEY",
-    "FIRECRAWL_API_URL",
-    "FIRECRAWL_BROWSER_TTL",
-)
+_BROWSER_PASSTHROUGH_KEYS: tuple[str, ...] = ()
 
 
 def _build_browser_env() -> dict:
@@ -93,7 +79,7 @@ def _build_browser_env() -> dict:
     infra secrets) then re-adds only the browser-backend keys the worker needs.
     The ``hermes_subprocess_env`` import is deferred to keep ``browser_tool``
     importable under test harnesses that load it against a stubbed ``tools``
-    package (tests/tools/test_managed_browserbase_and_modal.py).
+    package (tests that stub the tools package).
     """
     from tools.environments.local import hermes_subprocess_env
 
@@ -120,20 +106,12 @@ except Exception:
     _is_always_blocked_url = lambda url: True  # noqa: E731 — fail-closed on the floor too
     _normalize_url_for_request = lambda url: url  # noqa: E731 — best-effort fallback
     _sensitive_query_param_name = lambda url: None  # noqa: E731 — best-effort fallback
-# Browser-provider ABC + registry — PR #25214 moved the per-vendor providers
-# (Browserbase / Firecrawl) out of ``tools/browser_providers/``
-# and into ``plugins/browser/<vendor>/``. Browser Use was removed in k-hermes.
-# The dispatcher consults the registry; the legacy class names are re-exported
-# below as backward-compat shims for callers that import them from this module.
+# Browser-provider ABC + registry remain so third-party plugins under
+# ``~/.hermes/plugins/browser/`` can still register. Bundled Browserbase /
+# Firecrawl browser / Browser Use providers were removed in k-hermes.
 from agent.browser_provider import BrowserProvider as CloudBrowserProvider  # noqa: F401  (legacy alias)
 from agent.browser_registry import (  # noqa: F401  (test-patchable surface)
     get_provider as _registry_get_browser_provider,
-)
-from plugins.browser.browserbase.provider import (  # noqa: F401  (legacy import surface)
-    BrowserbaseBrowserProvider as BrowserbaseProvider,
-)
-from plugins.browser.firecrawl.provider import (  # noqa: F401
-    FirecrawlBrowserProvider as FirecrawlProvider,
 )
 from tools.tool_backend_helpers import normalize_browser_cloud_provider
 logger = logging.getLogger(__name__)
@@ -453,9 +431,8 @@ def _get_cdp_override() -> str:
     1. ``BROWSER_CDP_URL`` env var (live override from ``/browser connect``)
     2. ``browser.cdp_url`` in config.yaml (persistent config)
 
-    When either is set, we skip both Browserbase and the local headless
-    launcher and connect directly to the supplied Chrome DevTools Protocol
-    endpoint.
+    When either is set, we skip CloakBrowser auto-launch and connect directly
+    to the supplied Chrome DevTools Protocol endpoint.
     """
     env_override = os.environ.get("BROWSER_CDP_URL", "").strip()
     if env_override:
@@ -526,8 +503,7 @@ def _ensure_cdp_supervisor(task_id: str) -> None:
     Resolves the CDP URL in this order:
       1. ``BROWSER_CDP_URL`` / ``browser.cdp_url`` — covers ``/browser connect``
          and config-set overrides.
-      2. ``_active_sessions[task_id]["cdp_url"]`` — covers Browserbase + any
-         other cloud provider whose ``create_session`` returns a raw CDP URL.
+      2. ``_active_sessions[task_id]["cdp_url"]`` — covers any cloud provider whose ``create_session`` returns a raw CDP URL.
 
     Swallows all errors — failing to attach the supervisor must not break
     the browser session itself.  The agent simply won't see
@@ -576,23 +552,11 @@ def _stop_cdp_supervisor(task_id: str) -> None:
 # Cloud Provider Registry
 # ============================================================================
 #
-# Per-vendor browser providers (Browserbase / Firecrawl) live as
-# plugins under ``plugins/browser/<vendor>/`` and self-register through
-# :mod:`agent.browser_registry` at plugin-discovery time. The legacy
-# class-name registry below is preserved as a backward-compat shim so test
-# fixtures that ``monkeypatch.setattr(browser_tool, "_PROVIDER_REGISTRY", ...)``
-# keep working — but ``_get_cloud_provider()`` now consults
-# :mod:`agent.browser_registry` for the actual lookup.
-#
-# When the test patches ``_PROVIDER_REGISTRY``, we honour it (so the cache
-# unit tests still drive the function); otherwise the registry-backed path
-# wins. This keeps the test surface stable while letting third-party
-# plugins drop in under ``~/.hermes/plugins/browser/<vendor>/``.
+# Bundled cloud browser providers are removed. The registry dict remains as a
+# test patch point; live resolution uses agent.browser_registry (empty unless
+# a third-party plugin registers).
 
-_PROVIDER_REGISTRY: Dict[str, type] = {
-    "browserbase": BrowserbaseProvider,
-    "firecrawl": FirecrawlProvider,
-}
+_PROVIDER_REGISTRY: Dict[str, type] = {}
 # Frozen copy of the import-time _PROVIDER_REGISTRY, used by
 # ``_is_legacy_provider_registry_overridden`` to detect test-time
 # monkeypatching. NEVER mutate this dict.
@@ -655,103 +619,16 @@ def _ensure_browser_plugins_loaded() -> None:
 
 
 def _get_cloud_provider() -> Optional[CloudBrowserProvider]:
-    """Return the configured cloud browser provider, or None for local mode.
+    """Return a configured cloud browser provider, or None for local mode.
 
-    Reads ``config["browser"]["cloud_provider"]`` once and caches the result
-    for the process lifetime. An explicit ``local`` provider disables cloud
-    fallback. If unset, fall back to Browserbase (direct credentials only) —
-    the k-hermes auto-detect order after Browser Use removal, expressed as the
-    :data:`agent.browser_registry._LEGACY_PREFERENCE` walk.
-
-    Selection routes through :mod:`agent.browser_registry` so third-party
-    browser plugins (``~/.hermes/plugins/browser/<vendor>/``) participate
-    in explicit-config resolution. Test fixtures that override
-    ``_PROVIDER_REGISTRY`` or ``BrowserbaseProvider``
-    on this module still drive the function — see
-    ``_is_legacy_provider_registry_overridden``.
+    k-hermes ships no bundled cloud browser backends. Resolution still consults
+    ``browser.cloud_provider`` and :mod:`agent.browser_registry` so optional
+    third-party plugins under ``~/.hermes/plugins/browser/`` can register.
+    Without a registered plugin, this always returns None (CloakBrowser/CDP).
     """
     global _cached_cloud_provider, _cloud_provider_resolved
     if _cloud_provider_resolved:
         return _cached_cloud_provider
-
-    resolved: Optional[CloudBrowserProvider] = None
-    try:
-        from hermes_cli.config import read_raw_config
-        cfg = read_raw_config()
-        browser_cfg = cfg.get("browser", {})
-        provider_key = None
-        if isinstance(browser_cfg, dict) and "cloud_provider" in browser_cfg:
-            provider_key = normalize_browser_cloud_provider(
-                browser_cfg.get("cloud_provider")
-            )
-            if provider_key == "local":
-                _cached_cloud_provider = None
-                _cloud_provider_resolved = True
-                return None
-        if provider_key:
-            try:
-                if _is_legacy_provider_registry_overridden():
-                    # Test fixture path: honour the patched dict so the
-                    # cache-policy unit tests keep working.
-                    factory = _PROVIDER_REGISTRY.get(provider_key)
-                    if factory is not None:
-                        resolved = factory()
-                else:
-                    # Ensure plugins are discovered so the registry is
-                    # populated. Idempotent — cheap on subsequent calls.
-                    _ensure_browser_plugins_loaded()
-                    resolved = _registry_get_browser_provider(provider_key)
-                    if resolved is None:
-                        # Explicit config name unknown to the registry —
-                        # might be a typo, an uninstalled plugin, or a
-                        # registry-population failure. Warn the user
-                        # (legacy code would have surfaced a typed
-                        # credentials error via direct class instantiation;
-                        # post-migration we surface this WARNING instead).
-                        logger.warning(
-                            "browser.cloud_provider=%r is not a registered "
-                            "browser plugin; falling back to auto-detect "
-                            "(install the corresponding plugin or fix the "
-                            "config key spelling).",
-                            provider_key,
-                        )
-            except Exception:
-                logger.warning(
-                    "Failed to instantiate explicit cloud_provider %r; will retry on next call",
-                    provider_key,
-                    exc_info=True,
-                )
-                return None
-    except Exception as e:
-        # Config file may be temporarily unreadable; still try auto-detect so
-        # env-based / managed-gateway credentials can resolve. Don't pin cache.
-        logger.debug("Could not read cloud_provider from config: %s", e)
-
-    if resolved is None:
-        # Auto-detect path: Browserbase only (direct credentials). Uses the
-        # legacy class name imported at the top of this module so tests that
-        # ``monkeypatch.setattr(browser_tool, "BrowserbaseProvider", ...)``
-        # keep driving this branch deterministically. Third-party browser
-        # plugins are intentionally NOT reachable from auto-detect — they
-        # participate only via explicit ``browser.cloud_provider: <name>``,
-        # mirroring the firecrawl gate documented on
-        # :data:`agent.browser_registry._LEGACY_PREFERENCE`.
-        try:
-            fallback_provider = BrowserbaseProvider()
-            if fallback_provider.is_configured():
-                resolved = fallback_provider
-        except Exception:  # pragma: no cover - defensive: never poison cache
-            logger.debug("Cloud provider auto-detect failed", exc_info=True)
-            return None
-
-    if resolved is None:
-        # Transient None — credentials may self-heal. Don't poison the cache.
-        return None
-
-    _cached_cloud_provider = resolved
-    _cloud_provider_resolved = True
-    return _cached_cloud_provider
-
 
 from hermes_constants import is_termux as _is_termux_environment
 
@@ -1655,7 +1532,7 @@ def _reap_orphaned_browser_sessions():
     socket_dirs = glob.glob(pattern)
     # Also pick up CDP sessions
     socket_dirs += glob.glob(os.path.join(tmpdir, "agent-browser-cdp_*"))
-    # Also pick up cloud-provider sessions (browserbase/firecrawl)
+    # Also pick up cloud-provider sessions (cloud-provider)
     socket_dirs += glob.glob(os.path.join(tmpdir, "agent-browser-hermes_*"))
 
     if not socket_dirs:
@@ -4085,7 +3962,7 @@ def cleanup_browser(task_id: Optional[str] = None) -> None:
     Clean up browser session(s) for a task.
 
     Called automatically when a task completes or when inactivity timeout is reached.
-    Closes both the agent-browser/Browserbase session.
+    Closes the agent-browser/CDP session.
 
     When ``task_id`` is a bare task identifier (no ``::local`` suffix), reaps
     BOTH the cloud/primary session AND any hybrid-routing local sidecar that
@@ -4427,7 +4304,7 @@ def check_browser_requirements() -> bool:
     engine and for fallback/screenshot paths, but not for Lightpanda-only text
     navigation/snapshot workflows.
 
-    In **cloud mode** (Browserbase or Firecrawl): the CLI
+    In **cloud mode** (third-party browser plugin): the CLI
     and the provider's required credentials must be present. The cloud
     provider hosts its own Chromium, so no local browser binary is needed.
 

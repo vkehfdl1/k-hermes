@@ -1115,7 +1115,7 @@ def _run_cua_driver_installer(label: str = "Installing", verbose: bool = True) -
 def _run_post_setup(post_setup_key: str):
     """Run post-setup hooks for tools that need extra installation steps."""
     import shutil
-    if post_setup_key in {"agent_browser", "browserbase"}:
+    if post_setup_key in {"agent_browser"}:
         node_modules = PROJECT_ROOT / "node_modules" / "agent-browser"
         npm_bin = shutil.which("npm")
         npx_bin = shutil.which("npx")
@@ -1146,7 +1146,7 @@ def _run_post_setup(post_setup_key: str):
             return
 
         # Step 2: only the local browser provider actually needs Chromium on
-        # disk. Cloud providers (Browserbase, Firecrawl) host
+        # disk. Optional third-party cloud browser plugins host
         # their own Chromium and don't need the local install.
         if post_setup_key != "agent_browser":
             return
@@ -2278,8 +2278,9 @@ def _plugin_web_search_providers() -> list[dict]:
     return rows
 
 
-# Mirror of _plugin_web_search_providers for cloud browser backends. After
-# PR #25214, Browserbase / Firecrawl live as plugins under
+# Mirror of _plugin_web_search_providers for optional cloud browser backends.
+# Bundled Browserbase / Firecrawl browser plugins were removed from k-hermes;
+# third-party plugins may still live under
 # plugins/browser/<vendor>/; this helper is the sole source of provider rows
 # for those three in the "Browser Automation" picker. The hardcoded
 # ``TOOL_CATEGORIES["browser"]`` entries that drove the category before
@@ -2456,9 +2457,8 @@ def _visible_providers(
     if cat.get("name") == "Web Search & Extract":
         visible.extend(_plugin_web_search_providers())
 
-    # Inject plugin-registered cloud browser backends. After PR #25214,
-    # Browserbase / Firecrawl are the plugin-supplied rows;
-    # the hardcoded "Local Browser" row stays as the non-cloud UX setup flow.
+    # Inject any third-party cloud browser backends still registered.
+    # The hardcoded "Local Browser" row stays as the non-cloud UX setup flow.
     if cat.get("name") == "Browser Automation":
         visible.extend(_plugin_browser_providers())
 

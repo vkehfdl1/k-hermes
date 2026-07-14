@@ -3,7 +3,7 @@ Browser Provider ABC
 ====================
 
 Defines the pluggable-backend interface for cloud browser providers
-(Browserbase, Firecrawl, …). Providers register instances via
+(third-party cloud browser plugins, …). Providers register instances via
 :meth:`PluginContext.register_browser_provider`; the active one (selected via
 ``browser.cloud_provider`` in ``config.yaml``) services every cloud-mode
 ``browser_*`` tool call.
@@ -65,7 +65,7 @@ class BrowserProvider(abc.ABC):
         config key.
 
         Lowercase, hyphens permitted to preserve existing user-visible names.
-        Examples: ``browserbase``, ``firecrawl``.
+        Examples: plugin-defined names.
         """
 
     @property
