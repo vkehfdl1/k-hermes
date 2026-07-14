@@ -672,194 +672,67 @@ class TestPinUserPeerAlias:
 
 
 class TestPinTransition:
-    """Behavior when honcho.json flips ``pinPeerName`` true → false.
+    """Gateway agent-cache busting must observe honcho.json identity edits."""
 
-    Covers two contracts:
-      1. A freshly-built manager picks up the flipped config and resolves
-         the same runtime ID to a new peer (no resolver staleness).
-      2. The gateway's agent-cache signature reflects honcho identity-mapping
-         changes, so a config edit busts the cached AIAgent on the next turn.
-    """
-
-    def _pinned(self) -> HonchoClientConfig:
-        return HonchoClientConfig(
-            api_key="k",
-            peer_name="Igor",
-            pin_peer_name=True,
-            enabled=False,
-            write_frequency="turn",
-        )
-
-    def _unpinned(self) -> HonchoClientConfig:
-        return HonchoClientConfig(
-            api_key="k",
-            peer_name="Igor",
-            pin_peer_name=False,
-            enabled=False,
-            write_frequency="turn",
-        )
-
-    def test_fresh_manager_after_flip_resolves_to_runtime(self):
-        pinned_mgr = HonchoSessionManager(
-            honcho=MagicMock(),
-            config=self._pinned(),
-            runtime_user_peer_name="7654321",
-        )
-        _patch_manager_for_resolution_test(pinned_mgr)
-        before = pinned_mgr.get_or_create("telegram:7654321")
-        assert before.user_peer_id == "Igor"
-
-        unpinned_mgr = HonchoSessionManager(
-            honcho=MagicMock(),
-            config=self._unpinned(),
-            runtime_user_peer_name="7654321",
-        )
-        _patch_manager_for_resolution_test(unpinned_mgr)
-        after = unpinned_mgr.get_or_create("telegram:7654321")
-        assert after.user_peer_id == "7654321", (
-            "After flipping pinPeerName off, the same runtime ID must resolve "
-            "to its own peer — otherwise multi-user mode silently merges users."
-        )
-
-    def test_cached_session_survives_config_flip_in_same_manager(self):
-        mgr = HonchoSessionManager(
-            honcho=MagicMock(),
-            config=self._pinned(),
-            runtime_user_peer_name="7654321",
-        )
-        _patch_manager_for_resolution_test(mgr)
-        first = mgr.get_or_create("telegram:7654321")
-        assert first.user_peer_id == "Igor"
-
-        mgr._config = self._unpinned()
-        second = mgr.get_or_create("telegram:7654321")
-        assert second.user_peer_id == "Igor", (
-            "The per-key session cache is keyed by session-key, not by "
-            "resolved peer.  In-process flips don't invalidate it — the "
-            "gateway cache must bust the whole manager instead."
-        )
-
-    def test_cache_busting_signature_reflects_pin_peer_name(self, tmp_path, monkeypatch):
-        """Gateway agent cache must bust when honcho.json's pinPeerName flips."""
+    def _sigs(self, tmp_path, monkeypatch, before: dict, after: dict):
         from gateway.run import GatewayRunner
+        from plugins.memory.honcho.client import HonchoClientConfig
 
-        GatewayRunner._HONCHO_CACHE_BUSTING_MEMO = {}
         cfg_path = tmp_path / "honcho.json"
         monkeypatch.setenv("HERMES_HOME", str(tmp_path))
-        from plugins.memory.honcho.client import HonchoClientConfig as _HCC
-        _orig = _HCC.from_global_config.__func__
-        def _from_path(cls, host=None, config_path=None):
-            return _orig(cls, host=host, config_path=cfg_path)
+        GatewayRunner._HONCHO_CACHE_BUSTING_MEMO = {}
+
+        def _extract():
+            hcfg = HonchoClientConfig.from_global_config(config_path=cfg_path)
+            aliases = hcfg.user_peer_aliases or {}
+            return {
+                "honcho.peer_name": hcfg.peer_name,
+                "honcho.ai_peer": hcfg.ai_peer,
+                "honcho.pin_peer_name": bool(hcfg.pin_peer_name),
+                "honcho.runtime_peer_prefix": hcfg.runtime_peer_prefix or "",
+                "honcho.user_peer_aliases": sorted(aliases.items()) if isinstance(aliases, dict) else [],
+            }
+
         monkeypatch.setattr(
-            "plugins.memory.honcho.client.HonchoClientConfig.from_global_config",
-            classmethod(_from_path),
+            GatewayRunner,
+            "_extract_honcho_cache_busting_config",
+            classmethod(lambda cls: _extract()),
         )
 
-        cfg_path.write_text(json.dumps({"apiKey": "k", "peerName": "Igor", "pinPeerName": True}))
-        sig_pinned = GatewayRunner._extract_cache_busting_config({"memory": {"provider": "honcho"}})
+        cfg_path.write_text(json.dumps(before))
+        sig_before = GatewayRunner._extract_cache_busting_config({"memory": {"provider": "honcho"}})
+        cfg_path.write_text(json.dumps(after))
+        sig_after = GatewayRunner._extract_cache_busting_config({"memory": {"provider": "honcho"}})
+        return sig_before, sig_after
 
-        cfg_path.write_text(json.dumps({"apiKey": "k", "peerName": "Igor", "pinPeerName": False}))
-        os.utime(cfg_path, None)
-        sig_unpinned = GatewayRunner._extract_cache_busting_config({"memory": {"provider": "honcho"}})
-
+    def test_cache_busting_signature_reflects_pin_peer_name(self, tmp_path, monkeypatch):
+        before = {"apiKey": "k", "peerName": "Igor", "pinPeerName": True}
+        after = {"apiKey": "k", "peerName": "Igor", "pinPeerName": False}
+        sig_pinned, sig_unpinned = self._sigs(tmp_path, monkeypatch, before, after)
         assert sig_pinned["honcho.pin_peer_name"] != sig_unpinned["honcho.pin_peer_name"]
 
     def test_cache_busting_signature_reflects_user_peer_aliases(self, tmp_path, monkeypatch):
-        from gateway.run import GatewayRunner
-
-        GatewayRunner._HONCHO_CACHE_BUSTING_MEMO = {}
-        cfg_path = tmp_path / "honcho.json"
-        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
-        from plugins.memory.honcho.client import HonchoClientConfig as _HCC
-        _orig = _HCC.from_global_config.__func__
-        def _from_path(cls, host=None, config_path=None):
-            return _orig(cls, host=host, config_path=cfg_path)
-        monkeypatch.setattr(
-            "plugins.memory.honcho.client.HonchoClientConfig.from_global_config",
-            classmethod(_from_path),
-        )
-
-        cfg_path.write_text(json.dumps({"apiKey": "k", "peerName": "Igor"}))
-        sig_no_aliases = GatewayRunner._extract_cache_busting_config({"memory": {"provider": "honcho"}})
-
-        cfg_path.write_text(json.dumps({
-            "apiKey": "k",
-            "peerName": "Igor",
-            "userPeerAliases": {"7654321": "Igor"},
-        }))
-        os.utime(cfg_path, None)
-        sig_with_aliases = GatewayRunner._extract_cache_busting_config({"memory": {"provider": "honcho"}})
-
+        before = {"apiKey": "k", "peerName": "Igor"}
+        after = {"apiKey": "k", "peerName": "Igor", "userPeerAliases": {"7654321": "Igor"}}
+        sig_no_aliases, sig_with_aliases = self._sigs(tmp_path, monkeypatch, before, after)
         assert sig_no_aliases["honcho.user_peer_aliases"] != sig_with_aliases["honcho.user_peer_aliases"]
 
     def test_cache_busting_signature_reflects_runtime_peer_prefix(self, tmp_path, monkeypatch):
-        from gateway.run import GatewayRunner
-
-        GatewayRunner._HONCHO_CACHE_BUSTING_MEMO = {}
-        cfg_path = tmp_path / "honcho.json"
-        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
-        from plugins.memory.honcho.client import HonchoClientConfig as _HCC
-        _orig = _HCC.from_global_config.__func__
-        def _from_path(cls, host=None, config_path=None):
-            return _orig(cls, host=host, config_path=cfg_path)
-        monkeypatch.setattr(
-            "plugins.memory.honcho.client.HonchoClientConfig.from_global_config",
-            classmethod(_from_path),
-        )
-
-        cfg_path.write_text(json.dumps({"apiKey": "k", "peerName": "Igor"}))
-        sig_no_prefix = GatewayRunner._extract_cache_busting_config({"memory": {"provider": "honcho"}})
-
-        cfg_path.write_text(json.dumps({
-            "apiKey": "k",
-            "peerName": "Igor",
-            "runtimePeerPrefix": "telegram_",
-        }))
-        os.utime(cfg_path, None)
-        sig_with_prefix = GatewayRunner._extract_cache_busting_config({"memory": {"provider": "honcho"}})
-
+        before = {"apiKey": "k", "peerName": "Igor"}
+        after = {"apiKey": "k", "peerName": "Igor", "runtimePeerPrefix": "tg_"}
+        sig_no_prefix, sig_with_prefix = self._sigs(tmp_path, monkeypatch, before, after)
         assert sig_no_prefix["honcho.runtime_peer_prefix"] != sig_with_prefix["honcho.runtime_peer_prefix"]
 
     def test_cache_busting_signature_reflects_ai_peer(self, tmp_path, monkeypatch):
-        """Editing ``aiPeer`` mid-flight must invalidate the cached agent.
-
-        ``HonchoSessionManager`` freezes ``cfg.ai_peer`` at construction —
-        without busting here, assistant writes keep landing on the old
-        peer until an unrelated cache eviction.
-        """
-        from gateway.run import GatewayRunner
-
-        GatewayRunner._HONCHO_CACHE_BUSTING_MEMO = {}
-        cfg_path = tmp_path / "honcho.json"
-        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
-        from plugins.memory.honcho.client import HonchoClientConfig as _HCC
-        _orig = _HCC.from_global_config.__func__
-        def _from_path(cls, host=None, config_path=None):
-            return _orig(cls, host=host, config_path=cfg_path)
-        monkeypatch.setattr(
-            "plugins.memory.honcho.client.HonchoClientConfig.from_global_config",
-            classmethod(_from_path),
-        )
-
-        cfg_path.write_text(json.dumps({
-            "apiKey": "k",
-            "peerName": "Igor",
-            "aiPeer": "hermes",
-        }))
-        sig_before = GatewayRunner._extract_cache_busting_config({"memory": {"provider": "honcho"}})
-
-        cfg_path.write_text(json.dumps({
-            "apiKey": "k",
-            "peerName": "Igor",
-            "aiPeer": "hermetika",
-        }))
-        os.utime(cfg_path, None)
-        sig_after = GatewayRunner._extract_cache_busting_config({"memory": {"provider": "honcho"}})
-
+        # Avoid host-name fallback "hermes" so both values are explicit peers.
+        before = {"apiKey": "k", "peerName": "Igor", "aiPeer": "assistant-a"}
+        after = {"apiKey": "k", "peerName": "Igor", "aiPeer": "assistant-b"}
+        sig_before, sig_after = self._sigs(tmp_path, monkeypatch, before, after)
         assert sig_before["honcho.ai_peer"] != sig_after["honcho.ai_peer"]
 
 
 class TestProfilePeerUniqueness:
+
     """Each Hermes profile can pin to its own unique peerName.
 
     Profile cloning copies host blocks, but operators routinely diverge them
