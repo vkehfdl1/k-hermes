@@ -36,3 +36,17 @@ Upstream PRs are intentionally not opened for these items.
 ## Policy notes
 - Do **not** open upstream PRs for these browser backend product decisions.
 - Portal JWT coverage category names such as `browser-use` / `firecrawl` may still appear as entitlement enums; k-hermes does not route `browser_*` sessions through removed vendors.
+
+## Skills surface (k-hermes pruning)
+
+### Removed as out-of-scope for k-hermes
+- **`skills/yuanbao`** — Yuanbao group-ops skill removed from the bundled skill library.
+  - Note: the **Yuanbao messaging platform adapter** (`gateway/platforms/yuanbao*`) is unchanged; only the skill package is gone.
+- **`skills/data-science/jupyter-live-kernel`** — Jupyter live-kernel skill removed (entire `skills/data-science/` category).
+- **All mlops skills** — both bundled (`skills/mlops/`) and optional (`optional-skills/mlops/`) trees deleted.
+  - Bundled removed: huggingface-hub, llama-cpp, vllm, lm-evaluation-harness, weights-and-biases, audiocraft, segment-anything.
+  - Optional removed: axolotl, trl/unsloth, flash-attention, peft, outlines, dspy, whisper, vector DBs, GPU cloud skills, etc.
+
+### Docs / catalog updates
+- Website skill docs, sidebars, and EN/zh-Hans skill catalogs no longer list the removed skills.
+- Skill-authoring category list updated accordingly.

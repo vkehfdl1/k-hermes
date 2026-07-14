@@ -284,14 +284,14 @@ See [Skill Settings](/user-guide/configuration#skill-settings) and [Creating Ski
 
 ```text
 ~/.hermes/skills/                  # Single source of truth
-├── mlops/                         # Category directory
-│   ├── axolotl/
+├── software-development/          # Category directory
+│   ├── plan/
 │   │   ├── SKILL.md               # Main instructions (required)
 │   │   ├── references/            # Additional docs
 │   │   ├── templates/             # Output formats
 │   │   ├── scripts/               # Helper scripts callable from the skill
 │   │   └── assets/                # Supplementary files
-│   └── vllm/
+│   └── systematic-debugging/
 │       └── SKILL.md
 ├── devops/
 │   └── deploy-k8s/                # Agent-created skill
@@ -334,7 +334,7 @@ Paths support `~` expansion and `${VAR}` environment variable substitution.
 ~/.hermes/skills/               # Local (primary, read-write)
 ├── devops/deploy-k8s/
 │   └── SKILL.md
-└── mlops/axolotl/
+└── software-development/plan/
     └── SKILL.md
 
 ~/.agents/skills/               # External (shared, mutable if writable)

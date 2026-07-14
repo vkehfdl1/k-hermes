@@ -300,12 +300,11 @@ class ContextProfile:
 # names-only in the prompt's skill index under the opt-in ``focus`` mode only
 # (deny-list — anything not listed here, incl. custom user categories, keeps
 # full entries). Coding-adjacent categories (devops, github, mcp,
-# data-science, diagramming, research, security, …) are intentionally absent.
+# diagramming, research, security, …) are intentionally absent.
 _NON_CODING_SKILL_CATEGORIES = (
     "apple", "communication", "cooking", "creative", "email", "finance",
     "gaming", "gifs", "health", "media", "music", "note-taking",
     "productivity", "shopping", "smart-home", "social-media", "travel",
-    "yuanbao",
 )
 
 
