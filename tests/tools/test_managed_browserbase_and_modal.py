@@ -194,10 +194,20 @@ def _install_fake_tools_package():
 
 
 def test_browser_use_explicit_local_mode_stays_local_even_when_managed_gateway_is_ready(tmp_path):
+    """cloud_provider=local must not select the managed Browser Use gateway.
+
+    With CloakBrowser as the default local backend, `_is_local_mode()` is False
+    (CloakBrowser is a local backend but not the agent-browser inject path).
+    The critical contract is that no managed cloud provider is selected.
+    """
     _install_fake_tools_package()
-    (tmp_path / "config.yaml").write_text("browser:\n  cloud_provider: local\n", encoding="utf-8")
+    (tmp_path / "config.yaml").write_text(
+        "browser:\n  cloud_provider: local\n",
+        encoding="utf-8",
+    )
     env = os.environ.copy()
     env.pop("BROWSER_USE_API_KEY", None)
+    env.pop("BROWSER_CDP_URL", None)
     env.update({
         "HERMES_HOME": str(tmp_path),
         "TOOL_GATEWAY_USER_TOKEN": "nous-token",
@@ -206,12 +216,11 @@ def test_browser_use_explicit_local_mode_stays_local_even_when_managed_gateway_i
 
     with patch.dict(os.environ, env, clear=True):
         browser_tool = _load_tool_module("tools.browser_tool", "browser_tool.py")
-
-        local_mode = browser_tool._is_local_mode()
         provider = browser_tool._get_cloud_provider()
+        cloak_default = browser_tool._cloakbrowser_default_active()
 
-    assert local_mode is True
     assert provider is None
+    assert cloak_default is True
 
 
 def test_browserbase_does_not_use_gateway_only_configuration():
