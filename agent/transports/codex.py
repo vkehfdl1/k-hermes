@@ -374,6 +374,23 @@ class ResponsesApiTransport(ProviderTransport):
             merged_extra_body.setdefault("prompt_cache_key", cache_key)
             kwargs["extra_body"] = merged_extra_body
 
+        # Managed Responses proxy: normalize include/service_tier/max tokens
+        # and inject Idempotency-Key + x-k-manus-client-request-id when active.
+        if bool(params.get("single_dispatch_mode")) or bool(
+            params.get("managed_proxy")
+        ):
+            from agent.managed_proxy import (
+                apply_managed_correlation_headers,
+                normalize_managed_codex_kwargs,
+            )
+
+            kwargs = normalize_managed_codex_kwargs(kwargs)
+            kwargs = apply_managed_correlation_headers(
+                kwargs,
+                session_id=params.get("session_id") or params.get("managed_session_id"),
+                task_id=params.get("task_id") or params.get("managed_task_id"),
+                api_request_id=params.get("api_request_id"),
+            )
         return kwargs
 
     def normalize_response(self, response: Any, **kwargs) -> NormalizedResponse:
