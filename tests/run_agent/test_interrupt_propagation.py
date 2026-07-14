@@ -138,7 +138,7 @@ class TestInterruptPropagationToChild(unittest.TestCase):
     def test_prestart_interrupt_binds_to_execution_thread(self):
         """An interrupt that arrives before startup should bind to the agent thread."""
         agent = self._make_bare_agent()
-        barrier = threading.Barrier(3)
+        barrier = threading.Barrier(2)
         result = {}
 
         agent.interrupt("stop before start")
@@ -183,27 +183,21 @@ class TestPerThreadInterruptIsolation(unittest.TestCase):
     def test_interrupt_only_affects_target_thread(self):
         """set_interrupt(True, tid) only makes is_interrupted() True on that thread."""
         results = {}
-        barrier = threading.Barrier(2)
+        ready = threading.Barrier(3)  # A + B + main
+        go = threading.Event()
 
         def thread_a():
             """Agent A's execution thread — will be interrupted."""
-            tid = threading.current_thread().ident
-            results["a_tid"] = tid
-            barrier.wait(timeout=5)  # both TIDs published + main ready to interrupt
-            # Wait until main has applied the targeted interrupt.
-            deadline = time.time() + 2.0
-            while time.time() < deadline and not results.get("interrupt_set"):
-                time.sleep(0.01)
+            results["a_tid"] = threading.current_thread().ident
+            ready.wait(timeout=5)
+            assert go.wait(timeout=2.0)
             results["a_interrupted"] = is_interrupted()
 
         def thread_b():
             """Agent B's execution thread — should NOT be affected."""
-            tid = threading.current_thread().ident
-            results["b_tid"] = tid
-            barrier.wait(timeout=5)
-            deadline = time.time() + 2.0
-            while time.time() < deadline and not results.get("interrupt_set"):
-                time.sleep(0.01)
+            results["b_tid"] = threading.current_thread().ident
+            ready.wait(timeout=5)
+            assert go.wait(timeout=2.0)
             results["b_interrupted"] = is_interrupted()
 
         ta = threading.Thread(target=thread_a)
@@ -211,22 +205,13 @@ class TestPerThreadInterruptIsolation(unittest.TestCase):
         ta.start()
         tb.start()
 
-        # Wait for both threads to register their TIDs, then release the barrier
-        # by joining the third waiter: main also waits so interrupt is applied
-        # after both threads are parked on the barrier.
-        deadline = time.time() + 2.0
-        while time.time() < deadline and ("a_tid" not in results or "b_tid" not in results):
-            time.sleep(0.01)
+        # All three parties rendezvous after TIDs are published.
+        ready.wait(timeout=5)
         assert "a_tid" in results and "b_tid" in results
 
         # Interrupt ONLY thread A (simulates gateway interrupting agent A)
         set_interrupt(True, results["a_tid"])
-        results["interrupt_set"] = True
-        # Release workers (barrier parties=3 so main participates).
-        try:
-            barrier.wait(timeout=5)
-        except threading.BrokenBarrierError:
-            pass
+        go.set()
 
         ta.join(timeout=3)
         tb.join(timeout=3)
