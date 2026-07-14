@@ -13456,7 +13456,7 @@ async def run_toolset_post_setup(
 ):
     """Spawn a provider's post-setup install hook as a background action.
 
-    Post-setup hooks (npm install for browser/Camofox, pip install for
+    Post-setup hooks (npm install for browser, pip install for
     KittenTTS/Piper/ddgs, cua-driver fetch, etc.) are long-running and
     text-output, so this follows the spawn-action pattern: it launches
     ``hermes tools post-setup <key>`` and the frontend tails the log via

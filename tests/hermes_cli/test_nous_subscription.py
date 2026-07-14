@@ -157,7 +157,7 @@ def test_get_nous_subscription_features_uses_direct_browserbase_when_no_managed_
     assert features.browser.current_provider == "Browserbase"
 
 
-def test_get_nous_subscription_features_prefers_camofox_over_managed_browser_use(monkeypatch):
+def test_get_nous_subscription_features_ignores_removed_camofox_env(monkeypatch):
     env = {"CAMOFOX_URL": "http://localhost:9377"}
 
     monkeypatch.setattr(ns, "get_env_value", lambda name: env.get(name, ""))
@@ -165,24 +165,17 @@ def test_get_nous_subscription_features_prefers_camofox_over_managed_browser_use
         ns, "get_nous_portal_account_info", lambda: _account(logged_in=True, paid=True)
     )
     monkeypatch.setattr(ns, "_toolset_enabled", lambda config, key: key == "browser")
-    monkeypatch.setattr(ns, "_has_agent_browser", lambda: False)
+    monkeypatch.setattr(ns, "_has_agent_browser", lambda: True)
+    monkeypatch.setattr(ns, "_local_browser_runnable", lambda: True)
     monkeypatch.setattr(ns, "resolve_openai_audio_api_key", lambda: "")
     monkeypatch.setattr(ns, "has_direct_modal_credentials", lambda: False)
-    monkeypatch.setattr(
-        ns,
-        "is_managed_tool_gateway_ready",
-        lambda vendor: vendor == "browser-use",
-    )
+    monkeypatch.setattr(ns, "is_managed_tool_gateway_ready", lambda vendor: False)
 
-    features = ns.get_nous_subscription_features(
-        {"browser": {"cloud_provider": "browser-use"}}
-    )
+    features = ns.get_nous_subscription_features({})
 
-    assert features.browser.available is True
-    assert features.browser.active is True
+    # CAMOFOX_URL no longer selects a browser backend in k-hermes.
+    assert features.browser.current_provider != "Camofox"
     assert features.browser.managed_by_nous is False
-    assert features.browser.direct_override is True
-    assert features.browser.current_provider == "Camofox"
 
 
 def test_get_nous_subscription_features_requires_agent_browser_for_browserbase(monkeypatch):

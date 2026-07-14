@@ -416,7 +416,7 @@ Profiles 使用 `~/.hermes/profiles/<name>/`，布局相同。
 |---------|-----------------|
 | `web` | 网页搜索和内容提取 |
 | `search` | 仅网页搜索（`web` 的子集） |
-| `browser` | 浏览器自动化（Browserbase、Camofox 或本地 Chromium） |
+| `browser` | 浏览器自动化（Browserbase、CloakBrowser 或本地 Chromium） |
 | `terminal` | Shell 命令和进程管理 |
 | `file` | 文件读/写/搜索/补丁 |
 | `code_execution` | 沙箱 Python 执行 |

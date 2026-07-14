@@ -56,7 +56,7 @@ Hermes 可以选择将 `openai/*` 和 `openai-codex/*` 的轮次交由 [Codex CL
 Hermes 将自身注册为 MCP server，以便 Codex 能够回调获取 Codex 自身未内置的工具。通过回调可用的工具：
 
 - **`web_search`** / **`web_extract`** — 基于 Firecrawl；对于结构化内容，通常比直接抓取更干净。
-- **`browser_navigate` / `browser_click` / `browser_type` / `browser_press` / `browser_snapshot` / `browser_scroll` / `browser_back` / `browser_get_images` / `browser_console` / `browser_vision`** — 通过 Camofox 或 Browserbase 实现完整的浏览器自动化。
+- **`browser_navigate` / `browser_click` / `browser_type` / `browser_press` / `browser_snapshot` / `browser_scroll` / `browser_back` / `browser_get_images` / `browser_console` / `browser_vision`** — 通过 CloakBrowser 或 Browserbase 实现完整的浏览器自动化。
 - **`vision_analyze`** — 调用独立的视觉模型检查图像（与 Codex 的 `view_image` 不同，后者是将图像加载到对话中）。
 - **`image_generate`** — 通过 Hermes 的 image_gen 插件链生成图像。
 - **`skill_view` / `skills_list`** — 读取 Hermes 的技能库。
@@ -108,7 +108,7 @@ Kanban 工具通过分发器设置的 `HERMES_KANBAN_TASK` 环境变量进行访
 | `delegate_task` 子 agent | 是 | 不可用——需要 agent 循环上下文 |
 | `memory`、`session_search`、`todo` | 是 | 不可用——需要 agent 循环上下文 |
 | `web_search`、`web_extract` | 是 | 是（通过 MCP 回调） |
-| 浏览器自动化（Camofox/Browserbase） | 是 | 是（通过 MCP 回调） |
+| 浏览器自动化（CloakBrowser/Browserbase） | 是 | 是（通过 MCP 回调） |
 | `vision_analyze`、`image_generate` | 是 | 是（通过 MCP 回调） |
 | `skill_view`、`skills_list` | 是 | 是（通过 MCP 回调） |
 | `text_to_speech` | 是 | 是（通过 MCP 回调） |

@@ -24,9 +24,8 @@ def _reset_routing_state(monkeypatch):
     monkeypatch.setattr(browser_tool, "_cached_auto_local_for_private_urls", True)
     monkeypatch.setattr(browser_tool, "_start_browser_cleanup_thread", lambda: None)
     monkeypatch.setattr(browser_tool, "_update_session_activity", lambda t: None)
-    # Default: no CDP override, no Camofox
+    # Default: no CDP override, no extra backend
     monkeypatch.setattr(browser_tool, "_get_cdp_override", lambda: None)
-    monkeypatch.setattr(browser_tool, "_is_camofox_mode", lambda: False)
 
 
 class TestNavigationSessionKey:
@@ -76,34 +75,6 @@ class TestNavigationSessionKey:
         monkeypatch.setattr(browser_tool, "_get_cloud_provider", lambda: None)
         key = browser_tool._navigation_session_key("default", "http://localhost:3000/")
         assert key == "default"
-
-    def test_camofox_mode_stays_on_bare_task_id(self, monkeypatch):
-        """Camofox is already local — no hybrid routing needed."""
-        monkeypatch.setattr(browser_tool, "_get_cloud_provider", lambda: Mock())
-        monkeypatch.setattr(browser_tool, "_is_camofox_mode", lambda: True)
-        key = browser_tool._navigation_session_key("default", "http://localhost:3000/")
-        assert key == "default"
-
-    def test_cdp_override_stays_on_bare_task_id(self, monkeypatch):
-        """A user-supplied CDP endpoint owns the whole session — no hybrid."""
-        monkeypatch.setattr(browser_tool, "_get_cloud_provider", lambda: Mock())
-        monkeypatch.setattr(browser_tool, "_get_cdp_override", lambda: "ws://localhost:9222")
-        key = browser_tool._navigation_session_key("default", "http://localhost:3000/")
-        assert key == "default"
-
-    def test_feature_flag_off_disables_hybrid_routing(self, monkeypatch):
-        """The old auto-local flag no longer changes CloakBrowser routing."""
-        monkeypatch.setattr(browser_tool, "_get_cloud_provider", lambda: Mock())
-        monkeypatch.setattr(browser_tool, "_auto_local_for_private_urls", lambda: False)
-        key = browser_tool._navigation_session_key("default", "http://localhost:3000/")
-        assert key == "default"
-
-    def test_none_task_id_defaults_to_default_cloakbrowser_key(self, monkeypatch):
-        monkeypatch.setattr(browser_tool, "_get_cloud_provider", lambda: Mock())
-        navigation_session_key = getattr(browser_tool, "_navigation_session_key")
-        key = navigation_session_key(None, "http://localhost:3000/")
-        assert key == "default"
-
 
 class TestSessionKeyHelpers:
     def test_is_local_sidecar_key(self):

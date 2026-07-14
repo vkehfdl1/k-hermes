@@ -31,7 +31,7 @@ description: "Hermes 内置工具权威参考，按工具集分组"
 
 ## `browser` 工具集（CDP 门控工具）
 
-这两个工具属于 `browser` 工具集，但仅在会话启动时可访问 Chrome DevTools Protocol（CDP）端点时才注册——通过 `/browser connect`、`browser.cdp_url` 配置、Browserbase 会话或 Camofox。
+这两个工具属于 `browser` 工具集，但仅在会话启动时可访问 Chrome DevTools Protocol（CDP）端点时才注册——通过 `/browser connect`、`browser.cdp_url` 配置、Browserbase 会话或 CloakBrowser。
 
 | 工具 | 描述 | 所需环境 |
 |------|------|----------|

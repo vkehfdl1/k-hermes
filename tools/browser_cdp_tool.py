@@ -462,7 +462,7 @@ def browser_cdp(
         return tool_error(
             "No CDP endpoint is available. Run '/browser connect' to attach "
             "to a running Chrome, Brave, Chromium, or Edge browser, or set "
-            "'browser.cdp_url' in config.yaml. The Camofox backend is REST-only "
+            "'browser.cdp_url' in config.yaml. The legacy REST backends backend is REST-only "
             "and does not expose CDP.",
             cdp_docs=CDP_DOCS_URL,
         )
@@ -547,7 +547,7 @@ BROWSER_CDP_SCHEMA: Dict[str, Any] = {
         "or Edge browser, or when 'browser.cdp_url' is set in config.yaml. "
         "Not currently wired up for cloud backends (Browserbase, Browser Use, "
         "Firecrawl) — those expose CDP per session but live-session routing is "
-        "a follow-up. Camofox is REST-only and will never support CDP. If the "
+        "a follow-up. legacy REST backends is REST-only and will never support CDP. If the "
         "tool is in your toolset at all, a CDP endpoint is already reachable.\n\n"
         f"**CDP method reference:** {CDP_DOCS_URL} — use web_extract on a "
         "method's URL (e.g. '/tot/Page/#method-handleJavaScriptDialog') "
@@ -641,7 +641,7 @@ def _browser_cdp_check() -> bool:
     endpoint right now — meaning a static URL is set via ``/browser connect``
     (``BROWSER_CDP_URL``) or ``browser.cdp_url`` in ``config.yaml``.
 
-    Backends that do *not* currently expose CDP to us — Camofox (REST-only),
+    Backends that do *not* currently expose CDP to us — legacy REST backends (REST-only),
     the default local agent-browser mode (Playwright hides its internal CDP
     port), and cloud providers whose per-session ``cdp_url`` is not yet
     surfaced — are gated out so the model doesn't see a tool that would

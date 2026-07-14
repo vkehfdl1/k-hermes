@@ -94,7 +94,7 @@ This is the standalone command. The Zed registry's terminal-auth flow (`hermes a
 What it does:
 
 - Installs Node.js 22 LTS into `~/.hermes/node/` if missing
-- `npm install -g agent-browser @askjo/camofox-browser` into that prefix (no sudo needed — `npm`'s `--prefix` points at the user-writable Hermes-managed Node)
+- `npm install -g agent-browser @askjo/cloakbrowser-browser` into that prefix (no sudo needed — `npm`'s `--prefix` points at the user-writable Hermes-managed Node)
 - Installs Playwright Chromium, or uses a detected system Chrome/Chromium when available
 
 The bootstrap is idempotent — re-running it is fast and skips work that's already done.

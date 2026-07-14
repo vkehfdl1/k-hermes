@@ -136,15 +136,13 @@ from plugins.browser.firecrawl.provider import (  # noqa: F401
     FirecrawlBrowserProvider as FirecrawlProvider,
 )
 from tools.tool_backend_helpers import normalize_browser_cloud_provider
-# Camofox local anti-detection browser backend (optional).
-# When CAMOFOX_URL is set, all browser operations route through the
-# camofox REST API instead of the agent-browser CLI.
-try:
-    from tools.browser_camofox import is_camofox_mode as _is_camofox_mode
-except ImportError:
-    _is_camofox_mode = lambda: False  # noqa: E731
-
 logger = logging.getLogger(__name__)
+
+
+def _is_camofox_mode() -> bool:
+    """Camofox was removed from k-hermes; always False (test patch point only)."""
+    return False
+
 
 # Standard PATH entries for environments with minimal PATH (e.g. systemd services).
 # Includes Android/Termux and macOS Homebrew locations needed for agent-browser,
@@ -788,7 +786,6 @@ def _is_local_backend() -> bool:
     """Return True when the browser runs locally AND the terminal is also local.
 
     SSRF protection is only meaningful for cloud backends (Browserbase) where the agent could reach internal resources on a remote
-    machine.  For local backends — CloakBrowser, Camofox, or the built-in
     headless Chromium without a cloud provider — the user already has full
     terminal and network access on the same machine, so the check adds no
     security value.
@@ -803,17 +800,14 @@ def _is_local_backend() -> bool:
     # off-host). Don't treat it as a trusted local backend — otherwise a
     # model-driven navigate could reach internal/metadata services reachable
     # from the CDP host but not the terminal. This MUST be checked before the
-    # camofox short-circuit below so a Camofox backend combined with a CDP
-    # override still fails the local check instead of returning local and
+ # short-circuit below so a     # override still fails the local check instead of returning local and
     # skipping the private/internal SSRF gate. The override is honored from
     # either the BROWSER_CDP_URL env var or a persistent `browser.cdp_url`
-    # config (both via _get_cdp_override(), and both now suppress camofox in
-    # browser_camofox.py). _is_local_mode() already treats any CDP override as
+ # config (both via _get_cdp_override(), and both now suppress in
+ # browser_ _is_local_mode() already treats any CDP override as
     # non-local; keep the two helpers in agreement.
     if _get_cdp_override():
         return False
-    if _is_camofox_mode():
-        return True
     if _get_cloud_provider() is not None:
         return False
     # When terminal runs in a container, browser on host can access
@@ -877,14 +871,21 @@ def _get_browser_engine() -> str:
 def _should_inject_engine(engine: str) -> bool:
     """Return True when the engine flag should be added to agent-browser commands.
 
-    Only inject ``--engine`` for non-cloud, non-camofox local sessions where
-    the engine is explicitly set (not ``auto``).
+    Only inject ``--engine`` for non-cloud, non-CDP sessions where the engine is
+    explicitly set (not ``auto``). CloakBrowser default sessions attach via CDP
+    and do not need agent-browser ``--engine``.
     """
     if engine == "auto":
         return False
-    if _is_camofox_mode():
+    if _get_cdp_override():
         return False
-    return _is_local_mode()
+    if _get_cloud_provider() is not None:
+        return False
+    # Legacy agent-browser local engine path (Lightpanda/Chrome) when CloakBrowser
+    # default is disabled for the process (tests / explicit local tooling).
+    if _cloakbrowser_default_active():
+        return False
+    return True
 
 
 def _using_lightpanda_engine() -> bool:
@@ -1260,7 +1261,6 @@ def _navigation_session_key(task_id: str, url: str) -> str:
          default True).
       3. The URL resolves to a private/LAN/loopback address.
       4. A CDP override is not active (that path owns the whole session).
-      5. Camofox mode is not active (Camofox is already local-only).
       6. CloakBrowser default mode is not active (it owns all URLs).
 
     When all are true, returns ``f"{task_id}::local"`` so the hybrid-routing
@@ -1272,8 +1272,6 @@ def _navigation_session_key(task_id: str, url: str) -> str:
     if _get_cdp_override():
         return task_id
     if _cloakbrowser_default_active():
-        return task_id
-    if _is_camofox_mode():
         return task_id
     if _get_cloud_provider() is None:
         return task_id
@@ -2314,7 +2312,7 @@ def _run_browser_command(
     # hybrid private-URL routing can create a local sidecar while a cloud
     # provider remains configured for public URLs.
     engine = _engine_override or _get_browser_engine()
-    if engine != "auto" and not _is_camofox_mode() and not session_info.get("cdp_url"):
+    if engine != "auto" and not session_info.get("cdp_url"):
         backend_args += ["--engine", engine]
 
     # Keep concrete executable paths intact, even when they contain spaces.
@@ -2693,7 +2691,7 @@ def browser_navigate(url: str, task_id: Optional[str] = None) -> str:
         })
 
     # SSRF protection — block private/internal addresses before navigating.
-    # Skipped for local backends (Camofox, headless Chromium without a cloud
+ # Skipped for local backends (, headless Chromium without a cloud
     # provider) because the agent already has full local network access via
     # the terminal tool.  Also skipped when hybrid routing will auto-spawn a
     # local Chromium sidecar for this URL (cloud provider configured +
@@ -2750,11 +2748,6 @@ def browser_navigate(url: str, task_id: Optional[str] = None) -> str:
             "error": blocked["message"],
             "blocked_by_policy": {"host": blocked["host"], "rule": blocked["rule"], "source": blocked["source"]},
         })
-
-    # Camofox backend — delegate after safety checks pass
-    if _is_camofox_mode() and not _cloakbrowser_default_active():
-        from tools.browser_camofox import camofox_navigate
-        return camofox_navigate(url, task_id)
 
     if auto_local_this_nav:
         logger.info(
@@ -2901,10 +2894,6 @@ def browser_snapshot(
     Returns:
         JSON string with page snapshot
     """
-    if _is_camofox_mode():
-        from tools.browser_camofox import camofox_snapshot
-        return camofox_snapshot(full, task_id, user_task)
-
     effective_task_id = _last_session_key(task_id or "default")
 
     # Build command args based on full flag
@@ -2996,10 +2985,6 @@ def browser_click(ref: str, task_id: Optional[str] = None) -> str:
     Returns:
         JSON string with click result
     """
-    if _is_camofox_mode():
-        from tools.browser_camofox import camofox_click
-        return camofox_click(ref, task_id)
-
     effective_task_id = _last_session_key(task_id or "default")
     blocked = _blocked_private_page_action(effective_task_id, "click")
     if blocked is not None:
@@ -3037,10 +3022,6 @@ def browser_type(ref: str, text: str, task_id: Optional[str] = None) -> str:
     Returns:
         JSON string with type result
     """
-    if _is_camofox_mode():
-        from tools.browser_camofox import camofox_type
-        return camofox_type(ref, text, task_id)
-
     effective_task_id = _last_session_key(task_id or "default")
     blocked = _blocked_private_page_action(effective_task_id, "type")
     if blocked is not None:
@@ -3106,15 +3087,6 @@ def browser_scroll(direction: str, task_id: Optional[str] = None) -> str:
     # ~500px is roughly half a viewport of travel.
     _SCROLL_PIXELS = 500
 
-    if _is_camofox_mode():
-        from tools.browser_camofox import camofox_scroll
-        # Camofox REST API doesn't support pixel args; use repeated calls
-        _SCROLL_REPEATS = 5
-        result = ""
-        for _ in range(_SCROLL_REPEATS):
-            result = camofox_scroll(direction, task_id)
-        return result
-
     effective_task_id = _last_session_key(task_id or "default")
 
     result = _run_browser_command(effective_task_id, "scroll", [direction, str(_SCROLL_PIXELS)])
@@ -3142,10 +3114,6 @@ def browser_back(task_id: Optional[str] = None) -> str:
     Returns:
         JSON string with navigation result
     """
-    if _is_camofox_mode():
-        from tools.browser_camofox import camofox_back
-        return camofox_back(task_id)
-
     effective_task_id = _last_session_key(task_id or "default")
     result = _run_browser_command(effective_task_id, "back", [])
 
@@ -3194,10 +3162,6 @@ def browser_press(key: str, task_id: Optional[str] = None) -> str:
     Returns:
         JSON string with key press result
     """
-    if _is_camofox_mode():
-        from tools.browser_camofox import camofox_press
-        return camofox_press(key, task_id)
-
     effective_task_id = _last_session_key(task_id or "default")
     blocked = _blocked_private_page_action(effective_task_id, "press")
     if blocked is not None:
@@ -3258,10 +3222,6 @@ def browser_console(clear: bool = False, expression: Optional[str] = None, task_
         return _browser_eval(expression, task_id)
 
     # --- Console output mode (original behaviour) ---
-    if _is_camofox_mode():
-        from tools.browser_camofox import camofox_console
-        return camofox_console(clear, task_id)
-
     effective_task_id = _last_session_key(task_id or "default")
 
     if _eval_ssrf_guard_active(effective_task_id):
@@ -3519,12 +3479,7 @@ def _browser_eval(expression: str, task_id: Optional[str] = None) -> str:
                 ),
             }, ensure_ascii=False)
 
-    # Camofox keeps its own raw-``task_id``-keyed session map, so pass the raw
-    # id (matching every other Camofox tool) rather than the resolved
     # agent-browser session key.  The literal pre-scan above already ran.
-    if _is_camofox_mode():
-        return _camofox_eval(expression, task_id)
-
     # ── Private-network guard (eval return-value path) ──────────────────────
     # The literal pre-scan above closes the direct-fetch sub-path
     # (`fetch('http://127.0.0.1/secret')`).  The post-eval page-URL recheck
@@ -3658,80 +3613,6 @@ def _browser_eval(expression: str, task_id: Optional[str] = None) -> str:
     return json.dumps(_copy_fallback_warning(response, result), ensure_ascii=False, default=str)
 
 
-def _camofox_current_page_private_url(tab_id: str, user_id: str) -> Optional[str]:
-    """Return the Camofox page URL when it targets a private/internal address.
-
-    Camofox analogue of ``_current_page_private_url`` (evaluate endpoint instead
-    of the agent-browser CLI).  Returns ``None`` when the page is public, the URL
-    can't be determined, or the probe errors (fail-open on probe failure,
-    matching the snapshot/vision guards — do not change to fail-closed without
-    also changing the sibling).
-    """
-    try:
-        from tools.browser_camofox import _post
-
-        data = _post(
-            f"/tabs/{tab_id}/evaluate",
-            body={"expression": "window.location.href", "userId": user_id},
-        )
-        current_url = str(data.get("result") if isinstance(data, dict) else data or "")
-        current_url = current_url.strip().strip('"').strip("'")
-        if current_url and (_is_always_blocked_url(current_url) or not _is_safe_url(current_url)):
-            return current_url
-    except Exception as exc:
-        logger.debug("_camofox_current_page_private_url: probe failed (%s)", exc)
-    return None
-
-
-def _camofox_eval(expression: str, task_id: Optional[str] = None) -> str:
-    """Evaluate JS via Camofox's /tabs/{tab_id}/evaluate endpoint (if available)."""
-    from tools.browser_camofox import _ensure_tab, _post
-    try:
-        tab_info = _ensure_tab(task_id or "default")
-        tab_id = str(tab_info.get("tab_id") or tab_info.get("id") or "")
-        if not tab_id:
-            raise RuntimeError("Camofox tab is missing an id")
-        user_id = str(tab_info["user_id"])
-        resp = _post(f"/tabs/{tab_id}/evaluate", body={"expression": expression, "userId": user_id})
-
-        # Camofox returns the result in a JSON envelope
-        raw_result = resp.get("result") if isinstance(resp, dict) else resp
-        parsed = raw_result
-        if isinstance(raw_result, str):
-            try:
-                parsed = json.loads(raw_result)
-            except (json.JSONDecodeError, ValueError):
-                pass
-
-        if _eval_ssrf_guard_active(task_id or "default"):
-            _blocked_url = _camofox_current_page_private_url(tab_id, user_id)
-            if _blocked_url:
-                return json.dumps({
-                    "success": False,
-                    "error": (
-                        "Blocked: page URL targets a private or internal address "
-                        f"({_blocked_url}). This may have been caused by a "
-                        "JavaScript navigation via browser_console."
-                    ),
-                }, ensure_ascii=False)
-
-        return json.dumps({
-            "success": True,
-            "result": _redact_browser_output(parsed),
-            "result_type": type(parsed).__name__,
-        }, ensure_ascii=False, default=str)
-    except Exception as e:
-        error_msg = str(e)
-        # Graceful degradation — server may not support eval
-        if any(code in error_msg for code in ("404", "405", "501")):
-            return json.dumps({
-                "success": False,
-                "error": "JavaScript evaluation is not supported by this Camofox server. "
-                         "Use browser_snapshot or browser_vision to inspect page state.",
-            })
-        return tool_error(error_msg, success=False)
-
-
 def _maybe_start_recording(task_id: str):
     """Start recording if browser.record_sessions is enabled in config."""
     with _cleanup_lock:
@@ -3791,10 +3672,6 @@ def browser_get_images(task_id: Optional[str] = None) -> str:
     Returns:
         JSON string with list of images (src and alt)
     """
-    if _is_camofox_mode():
-        from tools.browser_camofox import camofox_get_images
-        return camofox_get_images(task_id)
-
     effective_task_id = _last_session_key(task_id or "default")
 
     # Use eval to run JavaScript that extracts images
@@ -3878,10 +3755,6 @@ def browser_vision(question: str, annotate: bool = False, task_id: Optional[str]
         A JSON string with vision analysis results and screenshot_path, or a
         multimodal tool-result envelope carrying the screenshot and metadata.
     """
-    if _is_camofox_mode():
-        from tools.browser_camofox import camofox_vision
-        return camofox_vision(question, annotate, task_id)
-
     import base64
     import uuid as uuid_mod
     from hermes_constants import get_hermes_dir
@@ -4212,7 +4085,7 @@ def cleanup_browser(task_id: Optional[str] = None) -> None:
     Clean up browser session(s) for a task.
 
     Called automatically when a task completes or when inactivity timeout is reached.
-    Closes both the agent-browser/Browserbase session and Camofox sessions.
+    Closes both the agent-browser/Browserbase session.
 
     When ``task_id`` is a bare task identifier (no ``::local`` suffix), reaps
     BOTH the cloud/primary session AND any hybrid-routing local sidecar that
@@ -4259,18 +4132,9 @@ def _cleanup_single_browser_session(task_id: str) -> None:
     # before the backend tears down the underlying CDP endpoint.
     _stop_cdp_supervisor(task_id)
 
-    # Also clean up Camofox session if running in Camofox mode.
     # Skip full close when managed persistence is enabled — the browser
     # profile (and its session cookies) must survive across agent tasks.
     # The inactivity reaper still frees idle resources.
-    if _is_camofox_mode():
-        try:
-            from tools.browser_camofox import camofox_close, camofox_soft_cleanup
-            if not camofox_soft_cleanup(task_id):
-                camofox_close(task_id)
-        except Exception as e:
-            logger.debug("Camofox cleanup for task %s: %s", task_id, e)
-
     logger.debug("cleanup_browser called for task_id: %s", task_id)
     logger.debug("Active sessions: %s", list(_active_sessions.keys()))
 
@@ -4570,10 +4434,7 @@ def check_browser_requirements() -> bool:
     Returns:
         True if all requirements are met, False otherwise
     """
-    # Camofox backend — only needs the server URL, no agent-browser CLI
-    if _is_camofox_mode():
-        return True
-
+ # , no agent-browser CLI
     # CDP override mode can connect to an existing remote/local browser endpoint
     # without requiring the local agent-browser binary on PATH.
     if _get_cdp_override():

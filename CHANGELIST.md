@@ -11,6 +11,12 @@ Upstream PRs are intentionally not opened for these items.
 - Runtime helper: `tools/cloakbrowser_runtime.py`.
 - Default launch is **headed** (visible window) so operators can watch sessions; opt into headless with `CLOAKBROWSER_HEADLESS=1`.
 
+### Camofox local browser path removed
+- Deleted `tools/browser_camofox.py` and `tools/browser_camofox_state.py`.
+- Removed `CAMOFOX_*` env config, setup picker row, install/npm dependency, and runtime routing.
+- Explicit `browser.cloud_provider: camofox` is treated as unavailable.
+- Anti-detect browsing is CloakBrowser-only in k-hermes.
+
 ### Browser Use cloud provider removed
 - Deleted in-tree plugin: `plugins/browser/browser_use/`.
 - Removed auto-detect preference for Browser Use (`BROWSER_USE_API_KEY` / Nous managed browser-use gateway no longer selects a cloud browser).
@@ -25,10 +31,10 @@ Upstream PRs are intentionally not opened for these items.
 |---------|--------------------|
 | CloakBrowser (default local) | **Primary** |
 | CDP override (`/browser connect`) | Supported |
-| Camofox (local Firefox/Camoufox REST) | Supported optional |
 | Browserbase cloud | Supported optional |
 | Firecrawl cloud browser | Supported explicit-only |
 | Browser Use cloud | **Removed** |
+| Camofox (local Firefox/Camoufox REST) | **Removed** |
 
 ## Direct desktop
 - Encrypted media plane + no-strip route work under `agent/direct_desktop_*` and related session/state paths (see recent commits on `main`).

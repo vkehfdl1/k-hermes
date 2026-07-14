@@ -203,7 +203,6 @@ def _browser_label(current_provider: str) -> str:
     mapping = {
         "browserbase": "Browserbase",
         "firecrawl": "Firecrawl",
-        "camofox": "Camofox",
         "local": "Local browser",
     }
     return mapping.get(current_provider or "local", current_provider or "Local browser")
@@ -256,7 +255,6 @@ def _resolve_browser_feature_state(
     browser_provider_explicit: bool,
     browser_local_available: bool,
     browser_local_runnable: bool,
-    direct_camofox: bool,
     direct_browserbase: bool,
     direct_browser_use: bool,
     direct_firecrawl: bool,
@@ -272,9 +270,6 @@ def _resolve_browser_feature_state(
     on the latter, or setup/status advertise a browser that fails on first use
     when Chromium is missing.
     """
-    if direct_camofox:
-        return "camofox", True, bool(browser_tool_enabled), False
-
     if browser_provider_explicit:
         current_provider = browser_provider or "local"
         if current_provider == "browserbase":
@@ -289,6 +284,7 @@ def _resolve_browser_feature_state(
             active = bool(browser_tool_enabled and available)
             return current_provider, available, active, False
         if current_provider == "camofox":
+            # Camofox removed from k-hermes.
             return current_provider, False, False, False
 
         current_provider = "local"
@@ -398,7 +394,6 @@ def get_nous_subscription_features(
     direct_fal_video = direct_fal  # same FAL_KEY; separate var so use_gateway is independent
     direct_openai_tts = bool(resolve_openai_audio_api_key())
     direct_elevenlabs = bool(get_env_value("ELEVENLABS_API_KEY"))
-    direct_camofox = bool(get_env_value("CAMOFOX_URL"))
     direct_browserbase = bool(get_env_value("BROWSERBASE_API_KEY") and get_env_value("BROWSERBASE_PROJECT_ID"))
     direct_browser_use = bool(get_env_value("BROWSER_USE_API_KEY"))
     direct_modal = has_direct_modal_credentials()
@@ -568,7 +563,6 @@ def get_nous_subscription_features(
         browser_provider_explicit=browser_provider_explicit,
         browser_local_available=browser_local_available,
         browser_local_runnable=browser_local_runnable,
-        direct_camofox=direct_camofox,
         direct_browserbase=direct_browserbase,
         direct_browser_use=direct_browser_use,
         direct_firecrawl=direct_firecrawl,

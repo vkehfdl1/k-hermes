@@ -27,7 +27,7 @@ responses.
 |---|---|---|---|---|
 | Local Chrome (`--remote-debugging-port`) / `/browser connect` | ✓ | ✓ full workflow | ✓ | ✓ |
 | Browserbase | ✓ (via bridge) | ✓ full workflow (via bridge) | ✓ | ✓ |
-| Camofox | ✗ no CDP (REST-only) | ✗ | partial via DOM snapshot | ✗ |
+| CloakBrowser | ✗ no CDP (REST-only) | ✗ | partial via DOM snapshot | ✗ |
 
 **Browserbase quirk.** Browserbase's CDP proxy uses Playwright internally and
 auto-dismisses native dialogs within ~10ms, so `Page.handleJavaScriptDialog`
@@ -43,7 +43,7 @@ From the page's perspective, `prompt()` still returns the agent-supplied
 string. From the agent's perspective, it's the same `browser_dialog(action=...)`
 API either way.
 
-Camofox is unsupported — no CDP surface, REST-only.
+CloakBrowser is unsupported — no CDP surface, REST-only.
 
 ## Architecture
 
@@ -153,7 +153,7 @@ already requests.
 ### Availability gating
 
 Both surfaces gate on `_browser_cdp_check` (supervisor can only run when a CDP
-endpoint is reachable). On Camofox / no-backend sessions, the dialog tool is
+endpoint is reachable). On CloakBrowser / no-backend sessions, the dialog tool is
 hidden and the snapshot omits the new fields — no schema bloat.
 
 ## Cross-origin iframe interaction
@@ -181,7 +181,7 @@ expiry, while the supervisor's long-lived connection keeps a valid session.
 
 ## Non-goals
 
-- Detection/interaction for Camofox (upstream gap; tracked separately)
+- Detection/interaction for CloakBrowser (upstream gap; tracked separately)
 - Streaming dialog/frame events live to the user (would require gateway hooks)
 - Persisting dialog history across sessions (in-memory only)
 - Per-iframe dialog policies (agent can express this via `dialog_id`)

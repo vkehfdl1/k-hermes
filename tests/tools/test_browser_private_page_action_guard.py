@@ -12,7 +12,6 @@ PRIVATE_URL = "http://169.254.169.254/latest/meta-data/"
 
 @pytest.fixture(autouse=True)
 def _browser_mode(monkeypatch):
-    monkeypatch.setattr(browser_tool, "_is_camofox_mode", lambda: False)
     monkeypatch.setattr(browser_tool, "_last_session_key", lambda task_id: task_id)
 
 
@@ -89,7 +88,6 @@ def test_camofox_short_circuits_before_guard(monkeypatch):
     """Camofox mode returns from the dedicated camofox_* path BEFORE reaching the
     private-page guard, so the guard's helpers must never be consulted. Guards the
     ordering invariant (camofox early-return precedes _last_session_key + guard)."""
-    monkeypatch.setattr(browser_tool, "_is_camofox_mode", lambda: True)
 
     def fail_guard(task_id):
         raise AssertionError("guard must not run in camofox mode")
@@ -97,7 +95,6 @@ def test_camofox_short_circuits_before_guard(monkeypatch):
     monkeypatch.setattr(browser_tool, "_eval_ssrf_guard_active", fail_guard)
     monkeypatch.setattr(browser_tool, "_current_page_private_url", fail_guard)
 
-    import tools.browser_camofox as camofox
 
     monkeypatch.setattr(camofox, "camofox_click", lambda ref, task_id: '{"success": true, "camofox": true}')
 
@@ -186,7 +183,6 @@ def test_browser_back_failed_navigation_does_not_probe(monkeypatch):
 
 
 def test_browser_back_camofox_short_circuits_before_guard(monkeypatch):
-    monkeypatch.setattr(browser_tool, "_is_camofox_mode", lambda: True)
 
     def fail_guard(task_id):
         raise AssertionError("guard must not run in camofox mode")
@@ -194,7 +190,6 @@ def test_browser_back_camofox_short_circuits_before_guard(monkeypatch):
     monkeypatch.setattr(browser_tool, "_eval_ssrf_guard_active", fail_guard)
     monkeypatch.setattr(browser_tool, "_current_page_private_url", fail_guard)
 
-    import tools.browser_camofox as camofox
 
     monkeypatch.setattr(camofox, "camofox_back", lambda task_id: '{"success": true, "camofox": true}')
 

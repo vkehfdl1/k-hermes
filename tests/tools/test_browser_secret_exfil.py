@@ -287,43 +287,6 @@ class TestBrowserSnapshotRedaction:
         assert "Continue" in captured_prompts[0]
 
 
-class TestCamofoxAnnotationRedaction:
-    """Verify annotation context is redacted before vision LLM call."""
-
-    def test_annotation_context_secrets_redacted(self):
-        """Secrets in accessibility tree annotation should be masked."""
-        from agent.redact import redact_sensitive_text
-
-        fake_token = "ghp_" + "FAKEGITHUBTOKEN12345678901234"
-        annotation = (
-            "\n\nAccessibility tree (element refs for interaction):\n"
-            f"text: Token: {fake_token}\n"
-            "button [ref=e3]: Copy\n"
-        )
-        result = redact_sensitive_text(annotation)
-        assert "FAKEGITHUBTOKEN123456789" not in result
-        # Non-secret parts preserved
-        assert "button" in result
-        assert "ref=e3" in result
-
-    def test_annotation_env_dump_redacted(self):
-        """Env var dump in annotation context should be redacted."""
-        from agent.redact import redact_sensitive_text
-
-        fake_anth = "sk-" + "ant" + "-" + "ANTHROPICFAKEKEY123456789ABC"
-        fake_oai = "sk-" + "proj" + "-" + "OPENAIFAKEKEY99887766554433"
-        annotation = (
-            "\n\nAccessibility tree (element refs for interaction):\n"
-            f"text: ANTHROPIC_API_KEY={fake_anth}\n"
-            f"text: OPENAI_API_KEY={fake_oai}\n"
-            "text: PATH=/usr/local/bin\n"
-        )
-        result = redact_sensitive_text(annotation)
-        assert "ANTHROPICFAKEKEY123456789" not in result
-        assert "OPENAIFAKEKEY99887766" not in result
-        assert "PATH=/usr/local/bin" in result
-
-
 class TestBrowserSupervisorRedaction:
     """Verify supervisor dialog snapshots redact page-originated secrets."""
 
