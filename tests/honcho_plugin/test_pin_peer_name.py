@@ -743,8 +743,13 @@ class TestPinTransition:
         """Gateway agent cache must bust when honcho.json's pinPeerName flips."""
         from gateway.run import GatewayRunner
 
+        GatewayRunner._HONCHO_CACHE_BUSTING_MEMO = {}
         cfg_path = tmp_path / "honcho.json"
         monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        monkeypatch.setattr(
+            "plugins.memory.honcho.client.resolve_config_path",
+            lambda: cfg_path,
+        )
 
         cfg_path.write_text(json.dumps({"apiKey": "k", "peerName": "Igor", "pinPeerName": True}))
         sig_pinned = GatewayRunner._extract_cache_busting_config({"memory": {"provider": "honcho"}})
@@ -758,8 +763,13 @@ class TestPinTransition:
     def test_cache_busting_signature_reflects_user_peer_aliases(self, tmp_path, monkeypatch):
         from gateway.run import GatewayRunner
 
+        GatewayRunner._HONCHO_CACHE_BUSTING_MEMO = {}
         cfg_path = tmp_path / "honcho.json"
         monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        monkeypatch.setattr(
+            "plugins.memory.honcho.client.resolve_config_path",
+            lambda: cfg_path,
+        )
 
         cfg_path.write_text(json.dumps({"apiKey": "k", "peerName": "Igor"}))
         sig_no_aliases = GatewayRunner._extract_cache_busting_config({"memory": {"provider": "honcho"}})
@@ -777,8 +787,13 @@ class TestPinTransition:
     def test_cache_busting_signature_reflects_runtime_peer_prefix(self, tmp_path, monkeypatch):
         from gateway.run import GatewayRunner
 
+        GatewayRunner._HONCHO_CACHE_BUSTING_MEMO = {}
         cfg_path = tmp_path / "honcho.json"
         monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        monkeypatch.setattr(
+            "plugins.memory.honcho.client.resolve_config_path",
+            lambda: cfg_path,
+        )
 
         cfg_path.write_text(json.dumps({"apiKey": "k", "peerName": "Igor"}))
         sig_no_prefix = GatewayRunner._extract_cache_busting_config({"memory": {"provider": "honcho"}})
@@ -802,8 +817,13 @@ class TestPinTransition:
         """
         from gateway.run import GatewayRunner
 
+        GatewayRunner._HONCHO_CACHE_BUSTING_MEMO = {}
         cfg_path = tmp_path / "honcho.json"
         monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        monkeypatch.setattr(
+            "plugins.memory.honcho.client.resolve_config_path",
+            lambda: cfg_path,
+        )
 
         cfg_path.write_text(json.dumps({
             "apiKey": "k",
