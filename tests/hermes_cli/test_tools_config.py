@@ -946,7 +946,7 @@ def test_first_install_nous_auto_configures_managed_defaults(monkeypatch):
 
     assert config["web"]["backend"] == "firecrawl"
     assert config["tts"]["provider"] == "openai"
-    assert config["browser"]["cloud_provider"] == "browser-use"
+    assert config.get("browser", {}).get("cloud_provider", "local") in (None, "local")
     assert config["image_gen"]["use_gateway"] is True
     assert configured == []
 

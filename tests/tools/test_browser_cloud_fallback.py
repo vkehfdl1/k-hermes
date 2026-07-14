@@ -53,7 +53,7 @@ class TestCloudProviderSkippedByCloakBrowserDefault:
             "session_name": "cloud-sess",
             "bb_session_id": "bb_123",
             "cdp_url": None,
-            "features": {"browser_use": True},
+            "features": {"browserbase": True},
         }
         monkeypatch.setattr(browser_tool, "_get_cloud_provider", lambda: provider)
         monkeypatch.setattr(browser_tool, "_get_cdp_override", lambda: None)
@@ -117,10 +117,10 @@ class TestCloudProviderSkippedByCloakBrowserDefault:
         """Skipping cloud for CloakBrowser should not look like a provider failure."""
         _reset_session_state(monkeypatch)
 
-        BrowserUseProviderFake = type("BrowserUseProvider", (), {
+        BrowserbaseProviderFake = type("BrowserbaseProvider", (), {
             "create_session": Mock(side_effect=ConnectionError("timeout")),
         })
-        provider = BrowserUseProviderFake()
+        provider = BrowserbaseProviderFake()
         monkeypatch.setattr(browser_tool, "_get_cloud_provider", lambda: provider)
         monkeypatch.setattr(browser_tool, "_get_cdp_override", lambda: None)
         monkeypatch.setattr(browser_tool, "_create_cloakbrowser_session", _cloak_session)
@@ -129,7 +129,7 @@ class TestCloudProviderSkippedByCloakBrowserDefault:
             session = browser_tool._get_session_info("task-6")
 
         assert session["features"]["cloakbrowser"] is True
-        assert not any("BrowserUseProvider" in r.message and "timeout" in r.message for r in caplog.records)
+        assert not any("BrowserbaseProvider" in r.message and "timeout" in r.message for r in caplog.records)
 
     def test_provider_state_does_not_affect_next_cloakbrowser_task(self, monkeypatch):
         """Provider flakiness does not affect CloakBrowser task sessions."""
@@ -146,7 +146,7 @@ class TestCloudProviderSkippedByCloakBrowserDefault:
                 "session_name": "cloud-ok",
                 "bb_session_id": "bb_999",
                 "cdp_url": None,
-                "features": {"browser_use": True},
+                "features": {"browserbase": True},
             }
 
         provider = Mock()

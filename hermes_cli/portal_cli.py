@@ -134,7 +134,7 @@ def _cmd_tools(args) -> int:
         ("web",       "Web search & extract",  "Firecrawl"),
         ("image_gen", "Image generation",      "FAL"),
         ("tts",       "Text-to-speech",        "OpenAI TTS"),
-        ("browser",   "Browser automation",    "Browser Use"),
+        ("browser",   "Browser automation",    "Local CloakBrowser"),
         ("modal",     "Cloud terminal",        "Modal"),
     ]
 

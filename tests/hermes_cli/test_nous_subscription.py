@@ -99,7 +99,7 @@ def test_get_nous_subscription_features_prefers_managed_modal_in_auto_mode(monke
     assert features.modal.direct_override is False
 
 
-def test_get_nous_subscription_features_marks_browser_use_as_managed_when_gateway_ready(monkeypatch):
+def test_get_nous_subscription_features_does_not_select_removed_browser_use(monkeypatch):
     monkeypatch.setattr(ns, "get_env_value", lambda name: "")
     monkeypatch.setattr(
         ns, "get_nous_portal_account_info", lambda: _account(logged_in=True, paid=True)
@@ -118,11 +118,12 @@ def test_get_nous_subscription_features_marks_browser_use_as_managed_when_gatewa
         {"browser": {"cloud_provider": "browser-use"}}
     )
 
-    assert features.browser.available is True
-    assert features.browser.active is True
-    assert features.browser.managed_by_nous is True
-    assert features.browser.direct_override is False
-    assert features.browser.current_provider == "Browser Use"
+    # Explicit browser-use is retained as the configured name but marked
+    # unavailable after the provider was removed from k-hermes.
+    assert features.browser.available is False
+    assert features.browser.active is False
+    assert features.browser.managed_by_nous is False
+    assert features.browser.current_provider == "browser-use"
 
 
 def test_get_nous_subscription_features_uses_direct_browserbase_when_no_managed_gateway(monkeypatch):

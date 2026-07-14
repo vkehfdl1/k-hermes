@@ -425,25 +425,19 @@ def _print_setup_summary(config: dict, hermes_home):
     else:
         tool_status.append(("Web Search & Extract", False, "EXA_API_KEY, PARALLEL_API_KEY, FIRECRAWL_API_KEY/FIRECRAWL_API_URL, TAVILY_API_KEY, or SEARXNG_URL"))
 
-    # Browser tools (local Chromium, Camofox, Browserbase, Browser Use, or Firecrawl)
+    # Browser tools (CloakBrowser/local Chromium, Camofox, Browserbase, or Firecrawl)
     browser_provider = subscription_features.browser.current_provider
-    if subscription_features.browser.managed_by_nous:
-        tool_status.append(("Browser Automation (Nous Browser Use)", True, None))
-    elif subscription_features.browser.available:
+    if subscription_features.browser.available:
         label = "Browser Automation"
         if browser_provider:
             label = f"Browser Automation ({browser_provider})"
         tool_status.append((label, True, None))
     else:
-        missing_browser_hint = "npm install -g agent-browser, set CAMOFOX_URL, or configure Browser Use or Browserbase"
+        missing_browser_hint = "npm install -g agent-browser, set CAMOFOX_URL, or configure Browserbase"
         if browser_provider == "Browserbase":
             missing_browser_hint = (
                 "npm install -g agent-browser and set "
                 "BROWSERBASE_API_KEY/BROWSERBASE_PROJECT_ID"
-            )
-        elif browser_provider == "Browser Use":
-            missing_browser_hint = (
-                "npm install -g agent-browser and set BROWSER_USE_API_KEY"
             )
         elif browser_provider == "Camofox":
             missing_browser_hint = "CAMOFOX_URL"

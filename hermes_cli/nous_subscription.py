@@ -183,7 +183,7 @@ def _local_browser_runnable() -> bool:
     This mirrors the local-mode tail of
     :func:`tools.browser_tool.check_browser_requirements`, so the setup/status
     surfaces advertise local browser readiness only when the runtime would
-    actually run it. Cloud providers (Browserbase, Browser Use, Firecrawl) host
+    actually run it. Cloud providers (Browserbase, Firecrawl) host
     their own Chromium and therefore gate on :func:`_has_agent_browser` alone.
     """
     if not _has_agent_browser():
@@ -202,7 +202,6 @@ def _local_browser_runnable() -> bool:
 def _browser_label(current_provider: str) -> str:
     mapping = {
         "browserbase": "Browserbase",
-        "browser-use": "Browser Use",
         "firecrawl": "Firecrawl",
         "camofox": "Camofox",
         "local": "Local browser",
@@ -283,16 +282,8 @@ def _resolve_browser_feature_state(
             active = bool(browser_tool_enabled and available)
             return current_provider, available, active, False
         if current_provider == "browser-use":
-            provider_available = managed_browser_available or direct_browser_use
-            available = bool(browser_local_available and provider_available)
-            managed = bool(
-                browser_tool_enabled
-                and browser_local_available
-                and managed_browser_available
-                and not direct_browser_use
-            )
-            active = bool(browser_tool_enabled and available)
-            return current_provider, available, active, managed
+            # Browser Use was removed from k-hermes; treat as unavailable.
+            return current_provider, False, False, False
         if current_provider == "firecrawl":
             available = bool(browser_local_available and direct_firecrawl)
             active = bool(browser_tool_enabled and available)
@@ -305,16 +296,8 @@ def _resolve_browser_feature_state(
         active = bool(browser_tool_enabled and available)
         return current_provider, available, active, False
 
-    if managed_browser_available or direct_browser_use:
-        available = bool(browser_local_available)
-        managed = bool(
-            browser_tool_enabled
-            and browser_local_available
-            and managed_browser_available
-            and not direct_browser_use
-        )
-        active = bool(browser_tool_enabled and available)
-        return "browser-use", available, active, managed
+    # Browser Use removed from k-hermes — do not auto-select managed/direct
+    # browser-use even when Nous gateway credentials are present.
 
     if direct_browserbase:
         available = bool(browser_local_available)
@@ -816,11 +799,16 @@ def apply_nous_managed_defaults(
         stt_cfg["provider"] = "openai"
         changed.add("stt")
 
-    if "browser" in selected_toolsets and not features.browser.explicit_configured and not (
-        get_env_value("BROWSER_USE_API_KEY")
-        or get_env_value("BROWSERBASE_API_KEY")
-    ):
-        browser_cfg["cloud_provider"] = "browser-use"
+    # k-hermes: browser defaults to local CloakBrowser, not Browser Use.
+    # Mark browser as auto-configured so first-install skips the cloud picker.
+    if "browser" in selected_toolsets and not features.browser.explicit_configured:
+        browser_cfg = config.get("browser")
+        if not isinstance(browser_cfg, dict):
+            browser_cfg = {}
+            config["browser"] = browser_cfg
+        if not browser_cfg.get("cloud_provider"):
+            browser_cfg["cloud_provider"] = "local"
+        browser_cfg.pop("use_gateway", None)
         changed.add("browser")
 
     if "image_gen" in selected_toolsets and not fal_key_is_configured():
@@ -859,7 +847,7 @@ _GATEWAY_TOOL_LABELS = {
     "video_gen": "Video generation (FAL)",
     "tts": "Text-to-speech (OpenAI TTS)",
     "stt": "Speech-to-text (OpenAI Whisper)",
-    "browser": "Browser automation (Browser Use)",
+    "browser": "Browser automation (local CloakBrowser)",
 }
 
 
@@ -890,8 +878,7 @@ def _get_gateway_direct_credentials() -> Dict[str, bool]:
             or get_env_value("MISTRAL_API_KEY")
         ),
         "browser": bool(
-            get_env_value("BROWSER_USE_API_KEY")
-            or (get_env_value("BROWSERBASE_API_KEY") and get_env_value("BROWSERBASE_PROJECT_ID"))
+            get_env_value("BROWSERBASE_API_KEY") and get_env_value("BROWSERBASE_PROJECT_ID")
         ),
     }
 
@@ -902,7 +889,7 @@ _GATEWAY_DIRECT_LABELS = {
     "video_gen": "FAL key",
     "tts": "OpenAI/ElevenLabs key",
     "stt": "OpenAI/Groq/Mistral key",
-    "browser": "Browser Use/Browserbase key",
+    "browser": "Browserbase key",
 }
 
 _ALL_GATEWAY_KEYS = ("web", "image_gen", "video_gen", "tts", "stt", "browser")
@@ -1024,8 +1011,10 @@ def apply_gateway_defaults(
         changed.add("stt")
 
     if "browser" in tool_keys:
-        browser_cfg["cloud_provider"] = "browser-use"
-        browser_cfg["use_gateway"] = True
+        # Browser Use removed; keep local/default browser path.
+        browser_cfg.pop("use_gateway", None)
+        if browser_cfg.get("cloud_provider") == "browser-use":
+            browser_cfg["cloud_provider"] = "local"
         changed.add("browser")
 
     if "image_gen" in tool_keys:

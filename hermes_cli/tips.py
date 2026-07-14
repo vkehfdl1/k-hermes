@@ -221,7 +221,7 @@ TIPS = [
     "Context files are capped at 20,000 characters with smart head/tail truncation.",
 
     # --- Browser ---
-    "Five browser providers: local Chromium, Browserbase, Browser Use, Camofox, and Firecrawl.",
+    "Four browser providers: CloakBrowser/local Chromium, Browserbase, Camofox, and Firecrawl.",
     "Camofox is an anti-detection browser — Firefox fork with C++ fingerprint spoofing.",
     "browser_navigate returns a page snapshot automatically — no need to call browser_snapshot after.",
     "browser_vision with annotate=true overlays numbered labels on interactive elements.",

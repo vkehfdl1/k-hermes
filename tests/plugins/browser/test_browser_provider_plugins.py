@@ -2,14 +2,14 @@
 
 Covers:
 
-- All three bundled plugins (browserbase, browser-use, firecrawl)
+- The bundled plugins (browserbase, firecrawl)
   instantiate and self-report the expected ABC defaults.
 - Each plugin's ``is_available()`` correctly reflects env-var presence.
 - The browser_registry resolves an active provider in the documented
   scenarios:
     * explicit config wins ignoring availability (so dispatcher surfaces
       a typed credentials error)
-    * legacy preference walk: browser-use → browserbase (filtered by
+    * legacy preference walk: browserbase (filtered by
       availability)
     * firecrawl is NOT in the legacy walk — explicit-only
     * unknown name falls through to auto-detect
@@ -72,20 +72,19 @@ def _isolate_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 class TestBundledPluginsRegister:
-    """All three bundled browser plugins discover and register correctly."""
+    """Bundled browser plugins discover and register correctly."""
 
-    def test_all_three_plugins_present_in_registry(self) -> None:
+    def test_bundled_plugins_present_in_registry(self) -> None:
         _ensure_plugins_loaded()
         from agent.browser_registry import list_providers
 
         names = sorted(p.name for p in list_providers())
-        assert names == ["browser-use", "browserbase", "firecrawl"]
+        assert names == ["browserbase", "firecrawl"]
 
     @pytest.mark.parametrize(
         "plugin_name,expected_display",
         [
             ("browserbase", "Browserbase"),
-            ("browser-use", "Browser Use"),
             ("firecrawl", "Firecrawl"),
         ],
     )
@@ -102,7 +101,7 @@ class TestBundledPluginsRegister:
 
     @pytest.mark.parametrize(
         "plugin_name",
-        ["browserbase", "browser-use", "firecrawl"],
+        ["browserbase", "firecrawl"],
     )
     def test_each_plugin_has_setup_schema(self, plugin_name: str) -> None:
         """``get_setup_schema()`` returns a dict the picker can consume."""
@@ -121,7 +120,7 @@ class TestBundledPluginsRegister:
 
     @pytest.mark.parametrize(
         "plugin_name",
-        ["browserbase", "browser-use", "firecrawl"],
+        ["browserbase", "firecrawl"],
     )
     def test_each_plugin_implements_full_lifecycle(self, plugin_name: str) -> None:
         """The ABC's three lifecycle methods are all overridden."""
@@ -177,17 +176,6 @@ class TestIsAvailable:
         monkeypatch.setenv("BROWSERBASE_PROJECT_ID", "proj")
         assert p.is_available() is False
 
-    def test_browser_use_satisfied_by_api_key(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        _ensure_plugins_loaded()
-        from agent.browser_registry import get_provider
-
-        p = get_provider("browser-use")
-        assert p is not None
-        assert p.is_available() is False
-        monkeypatch.setenv("BROWSER_USE_API_KEY", "key")
-        assert p.is_available() is True
 
     def test_firecrawl_requires_api_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
         _ensure_plugins_loaded()
@@ -253,35 +241,30 @@ class TestRegistryResolution:
         # With no credentials anywhere, auto-detect should also fail.
         assert _resolve("not-a-real-provider") is None
 
-    def test_legacy_walk_prefers_browser_use_over_browserbase(
+    def test_legacy_walk_selects_browserbase_when_available(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Rule 3: walk order is browser-use → browserbase."""
+        """Rule 3: walk order is browserbase only after Browser Use removal."""
         _ensure_plugins_loaded()
         from agent.browser_registry import _resolve
 
-        # Both available — browser-use should win.
-        monkeypatch.setenv("BROWSER_USE_API_KEY", "k1")
         monkeypatch.setenv("BROWSERBASE_API_KEY", "k2")
         monkeypatch.setenv("BROWSERBASE_PROJECT_ID", "p")
 
         provider = _resolve(None)
         assert provider is not None
-        assert provider.name == "browser-use"
+        assert provider.name == "browserbase"
 
-    def test_legacy_walk_falls_through_to_browserbase(
+    def test_legacy_walk_ignores_browser_use_env(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Rule 3: browser-use unavailable → browserbase picked."""
+        """BROWSER_USE_API_KEY alone no longer selects a cloud browser."""
         _ensure_plugins_loaded()
         from agent.browser_registry import _resolve
 
-        monkeypatch.setenv("BROWSERBASE_API_KEY", "k")
-        monkeypatch.setenv("BROWSERBASE_PROJECT_ID", "p")
-
+        monkeypatch.setenv("BROWSER_USE_API_KEY", "k1")
         provider = _resolve(None)
-        assert provider is not None
-        assert provider.name == "browserbase"
+        assert provider is None
 
     def test_firecrawl_not_in_legacy_walk_even_when_only_one_available(
         self, monkeypatch: pytest.MonkeyPatch
@@ -313,7 +296,7 @@ class TestLegacyAbcAliases:
 
     @pytest.mark.parametrize(
         "plugin_name",
-        ["browserbase", "browser-use", "firecrawl"],
+        ["browserbase", "firecrawl"],
     )
     def test_is_configured_delegates_to_is_available(self, plugin_name: str) -> None:
         _ensure_plugins_loaded()
@@ -327,7 +310,6 @@ class TestLegacyAbcAliases:
         "plugin_name,expected_label",
         [
             ("browserbase", "Browserbase"),
-            ("browser-use", "Browser Use"),
             ("firecrawl", "Firecrawl"),
         ],
     )
@@ -356,7 +338,7 @@ class TestPickerIntegration:
 
         rows = _plugin_browser_providers()
         names = sorted(r.get("browser_provider") for r in rows)
-        assert names == ["browser-use", "browserbase", "firecrawl"]
+        assert names == ["browserbase", "firecrawl"]
 
     def test_picker_rows_carry_post_setup_hook(self) -> None:
         """Every browser plugin row has post_setup='agent_browser' so

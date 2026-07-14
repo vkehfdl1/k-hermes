@@ -38,20 +38,20 @@ class TestCloudProviderCachePolicy:
         # Even if config later changes, the cache stays.
         monkeypatch.setattr(
             "hermes_cli.config.read_raw_config",
-            lambda: {"browser": {"cloud_provider": "browser-use"}},
+            lambda: {"browser": {"cloud_provider": "browserbase"}},
         )
         assert browser_tool._get_cloud_provider() is None
 
     def test_successful_cloud_resolution_caches_permanently(self, monkeypatch):
         """A real provider instance must be cached and reused."""
-        fake_provider = Mock(name="BrowserUseProvider-instance")
+        fake_provider = Mock(name="BrowserbaseProvider-instance")
         factory = Mock(return_value=fake_provider)
         monkeypatch.setattr(
-            browser_tool, "_PROVIDER_REGISTRY", {"browser-use": factory}
+            browser_tool, "_PROVIDER_REGISTRY", {"browserbase": factory}
         )
         monkeypatch.setattr(
             "hermes_cli.config.read_raw_config",
-            lambda: {"browser": {"cloud_provider": "browser-use"}},
+            lambda: {"browser": {"cloud_provider": "browserbase"}},
         )
 
         assert browser_tool._get_cloud_provider() is fake_provider
@@ -68,13 +68,8 @@ class TestCloudProviderCachePolicy:
             lambda: {"browser": {}},
         )
 
-        bu_unconfigured = Mock()
-        bu_unconfigured.is_configured.return_value = False
         bb_unconfigured = Mock()
         bb_unconfigured.is_configured.return_value = False
-        monkeypatch.setattr(
-            browser_tool, "BrowserUseProvider", lambda: bu_unconfigured
-        )
         monkeypatch.setattr(
             browser_tool, "BrowserbaseProvider", lambda: bb_unconfigured
         )
@@ -85,7 +80,7 @@ class TestCloudProviderCachePolicy:
         # Credentials self-heal — next call must retry and pick up the provider.
         healed = Mock(name="healed-provider")
         healed.is_configured.return_value = True
-        monkeypatch.setattr(browser_tool, "BrowserUseProvider", lambda: healed)
+        monkeypatch.setattr(browser_tool, "BrowserbaseProvider", lambda: healed)
 
         assert browser_tool._get_cloud_provider() is healed
         assert browser_tool._cloud_provider_resolved is True
@@ -108,11 +103,11 @@ class TestCloudProviderCachePolicy:
             raise RuntimeError("missing dependency")
 
         monkeypatch.setattr(
-            browser_tool, "_PROVIDER_REGISTRY", {"browser-use": exploding_factory}
+            browser_tool, "_PROVIDER_REGISTRY", {"browserbase": exploding_factory}
         )
         monkeypatch.setattr(
             "hermes_cli.config.read_raw_config",
-            lambda: {"browser": {"cloud_provider": "browser-use"}},
+            lambda: {"browser": {"cloud_provider": "browserbase"}},
         )
 
         with caplog.at_level(logging.WARNING, logger="tools.browser_tool"):
@@ -120,6 +115,6 @@ class TestCloudProviderCachePolicy:
 
         assert browser_tool._cloud_provider_resolved is False
         assert any(
-            "browser-use" in r.message and r.levelno == logging.WARNING
+            "browserbase" in r.message and r.levelno == logging.WARNING
             for r in caplog.records
         )

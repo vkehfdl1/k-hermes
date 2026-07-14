@@ -119,16 +119,6 @@ SCENARIOS: list[tuple[str, str, dict[str, str]]] = [
         {"BROWSERBASE_API_KEY": "x", "BROWSERBASE_PROJECT_ID": "y"},
     ),
     (
-        "explicit-browser-use-no-creds",
-        "browser:\n  cloud_provider: browser-use\n",
-        {},
-    ),
-    (
-        "explicit-browser-use-with-creds",
-        "browser:\n  cloud_provider: browser-use\n",
-        {"BROWSER_USE_API_KEY": "k"},
-    ),
-    (
         "explicit-firecrawl-no-creds",
         "browser:\n  cloud_provider: firecrawl\n",
         {},
@@ -139,11 +129,6 @@ SCENARIOS: list[tuple[str, str, dict[str, str]]] = [
         {"FIRECRAWL_API_KEY": "k"},
     ),
     (
-        "no-config-bu-creds",
-        "",
-        {"BROWSER_USE_API_KEY": "k"},
-    ),
-    (
         "no-config-bb-creds",
         "",
         {"BROWSERBASE_API_KEY": "x", "BROWSERBASE_PROJECT_ID": "y"},
@@ -152,7 +137,6 @@ SCENARIOS: list[tuple[str, str, dict[str, str]]] = [
         "no-config-both-creds",
         "",
         {
-            "BROWSER_USE_API_KEY": "k",
             "BROWSERBASE_API_KEY": "x",
             "BROWSERBASE_PROJECT_ID": "y",
         },

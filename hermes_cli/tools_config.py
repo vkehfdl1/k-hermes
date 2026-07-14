@@ -446,38 +446,24 @@ TOOL_CATEGORIES = {
     "browser": {
         "name": "Browser Automation",
         "icon": "🌐",
-        # Per-provider rows for Browserbase, Browser Use, and Firecrawl are
+        # Per-provider rows for Browserbase and Firecrawl are
         # injected at runtime from plugins.browser.<vendor>.provider via
         # _plugin_browser_providers() in _visible_providers(). Only
         # non-provider UX setup-flow rows remain here. "Local Browser" is
         # listed FIRST so it is the default-highlighted (index 0) choice on a
         # fresh install — pressing Enter must land on the free, no-key local
-        # backend, never on the paid Nous Subscription gateway row:
-        #   - "Local Browser" — non-cloud option, no CloudBrowserProvider.
-        #   - "Nous Subscription (Browser Use cloud)" — managed Browser Use
-        #     billed via Nous subscription (requires_nous_auth +
-        #     override_env_vars). Uses the browser-use plugin as the
-        #     underlying backend but has a distinct setup UX.
+        # backend:
+        #   - "Local Browser" — CloakBrowser/local Chromium, no CloudBrowserProvider.
         #   - "Camofox" — anti-detection local Firefox; short-circuits the
         #     cloud-provider dispatch path via _is_camofox_mode().
+        # Browser Use was removed from k-hermes.
         "providers": [
             {
                 "name": "Local Browser",
                 "badge": "★ recommended · free",
-                "tag": "Headless Chromium, no API key needed",
+                "tag": "CloakBrowser / local Chromium, no API key needed",
                 "env_vars": [],
                 "browser_provider": "local",
-                "post_setup": "agent_browser",
-            },
-            {
-                "name": "Nous Subscription (Browser Use cloud)",
-                "badge": "subscription",
-                "tag": "Managed Browser Use billed to your subscription",
-                "env_vars": [],
-                "browser_provider": "browser-use",
-                "requires_nous_auth": True,
-                "managed_nous_feature": "browser",
-                "override_env_vars": ["BROWSER_USE_API_KEY"],
                 "post_setup": "agent_browser",
             },
             {
@@ -1173,7 +1159,7 @@ def _run_post_setup(post_setup_key: str):
             return
 
         # Step 2: only the local browser provider actually needs Chromium on
-        # disk. Cloud providers (Browserbase, Browser Use, Firecrawl) host
+        # disk. Cloud providers (Browserbase, Firecrawl) host
         # their own Chromium and don't need the local install.
         if post_setup_key != "agent_browser":
             return
@@ -2331,7 +2317,7 @@ def _plugin_web_search_providers() -> list[dict]:
 
 
 # Mirror of _plugin_web_search_providers for cloud browser backends. After
-# PR #25214, Browserbase / Browser Use / Firecrawl live as plugins under
+# PR #25214, Browserbase / Firecrawl live as plugins under
 # plugins/browser/<vendor>/; this helper is the sole source of provider rows
 # for those three in the "Browser Automation" picker. The hardcoded
 # ``TOOL_CATEGORIES["browser"]`` entries that drove the category before
@@ -2509,10 +2495,9 @@ def _visible_providers(
         visible.extend(_plugin_web_search_providers())
 
     # Inject plugin-registered cloud browser backends. After PR #25214,
-    # Browserbase / Browser Use / Firecrawl are the plugin-supplied rows;
-    # the hardcoded "Nous Subscription" / "Local Browser" / "Camofox" rows
-    # stay because they're non-provider UX setup flows (subscription auth,
-    # local fallback, and the REST-API anti-detection backend respectively).
+    # Browserbase / Firecrawl are the plugin-supplied rows;
+    # the hardcoded "Local Browser" / "Camofox" rows stay because they're
+    # non-provider UX setup flows (local fallback and REST anti-detection).
     if cat.get("name") == "Browser Automation":
         visible.extend(_plugin_browser_providers())
 

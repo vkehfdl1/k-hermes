@@ -278,7 +278,7 @@ def test_model_flow_nous_prints_subscription_guidance_without_mutating_explicit_
     config = {
         "model": {"provider": "nous", "default": "claude-opus-4-6"},
         "tts": {"provider": "elevenlabs"},
-        "browser": {"cloud_provider": "browser-use"},
+        "browser": {"cloud_provider": "browserbase"},
     }
 
     monkeypatch.setattr(
@@ -305,7 +305,7 @@ def test_model_flow_nous_prints_subscription_guidance_without_mutating_explicit_
     out = capsys.readouterr().out
     assert "Default model set to:" in out
     assert config["tts"]["provider"] == "elevenlabs"
-    assert config["browser"]["cloud_provider"] == "browser-use"
+    assert config["browser"]["cloud_provider"] == "browserbase"
 
 
 def test_model_flow_nous_does_not_restore_stale_custom_api_key(tmp_path, monkeypatch):

@@ -7,8 +7,8 @@ is now the canonical implementation.
 
 Browserbase requires direct ``BROWSERBASE_API_KEY`` and ``BROWSERBASE_PROJECT_ID``
 credentials. Managed Nous gateway support has been removed — the Nous
-subscription now routes through Browser Use instead (see
-``plugins/browser/browser_use/``).
+subscription previously routed through Browser Use; that provider was
+removed from k-hermes in favor of local CloakBrowser.
 
 Config keys this provider responds to::
 
@@ -47,7 +47,7 @@ class BrowserbaseBrowserProvider(BrowserProvider):
     """Browserbase (https://browserbase.com) cloud browser backend.
 
     Direct credentials only — managed-Nous-gateway support lives on the
-    Browser Use provider now.
+    local CloakBrowser default now.
     """
 
     @property
