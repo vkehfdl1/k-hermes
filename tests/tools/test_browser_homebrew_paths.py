@@ -221,6 +221,7 @@ class TestBrowserRequirements:
         monkeypatch.setenv("TERMUX_VERSION", "0.118.3")
         monkeypatch.setenv("PREFIX", "/data/data/com.termux/files/usr")
         monkeypatch.setattr("tools.browser_tool._is_camofox_mode", lambda: False)
+        monkeypatch.setattr("tools.browser_tool._cloakbrowser_default_active", lambda: False)
         monkeypatch.setattr("tools.browser_tool._get_cloud_provider", lambda: None)
         monkeypatch.setattr("tools.browser_tool._find_agent_browser", lambda **_kw: "npx agent-browser")
 
@@ -232,6 +233,7 @@ class TestRunBrowserCommandTermuxFallback:
         monkeypatch.setenv("TERMUX_VERSION", "0.118.3")
         monkeypatch.setenv("PREFIX", "/data/data/com.termux/files/usr")
         monkeypatch.setattr("tools.browser_tool._find_agent_browser", lambda **_kw: "npx agent-browser")
+        monkeypatch.setattr("tools.browser_tool._cloakbrowser_default_active", lambda: False)
         monkeypatch.setattr("tools.browser_tool._get_cloud_provider", lambda: None)
 
         result = _run_browser_command("task-1", "navigate", ["https://example.com"])

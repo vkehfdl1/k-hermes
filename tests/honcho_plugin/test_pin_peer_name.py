@@ -1,3 +1,4 @@
+import os
 """Tests for the ``pinPeerName`` / ``pinUserPeer`` config flag.
 
 Under a gateway (Telegram, Discord, Slack, ...) Hermes passes the
@@ -16,6 +17,7 @@ chosen ``user_peer_id`` can be asserted without touching the network.
 
 import hashlib
 import json
+import os
 from unittest.mock import MagicMock
 
 
@@ -748,6 +750,7 @@ class TestPinTransition:
         sig_pinned = GatewayRunner._extract_cache_busting_config({"memory": {"provider": "honcho"}})
 
         cfg_path.write_text(json.dumps({"apiKey": "k", "peerName": "Igor", "pinPeerName": False}))
+        os.utime(cfg_path, None)
         sig_unpinned = GatewayRunner._extract_cache_busting_config({"memory": {"provider": "honcho"}})
 
         assert sig_pinned["honcho.pin_peer_name"] != sig_unpinned["honcho.pin_peer_name"]
@@ -766,6 +769,7 @@ class TestPinTransition:
             "peerName": "Igor",
             "userPeerAliases": {"7654321": "Igor"},
         }))
+        os.utime(cfg_path, None)
         sig_with_aliases = GatewayRunner._extract_cache_busting_config({"memory": {"provider": "honcho"}})
 
         assert sig_no_aliases["honcho.user_peer_aliases"] != sig_with_aliases["honcho.user_peer_aliases"]
@@ -812,6 +816,7 @@ class TestPinTransition:
             "peerName": "Igor",
             "aiPeer": "hermetika",
         }))
+        os.utime(cfg_path, None)
         sig_after = GatewayRunner._extract_cache_busting_config({"memory": {"provider": "honcho"}})
 
         assert sig_before["honcho.ai_peer"] != sig_after["honcho.ai_peer"]
