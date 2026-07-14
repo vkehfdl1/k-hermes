@@ -2549,6 +2549,46 @@ def run_conversation(
                     and _looks_like_image_rejection
                     and _status_ok
                 ):
+                    # Direct-desktop media turns must never strip images and
+                    # retry text-only (issue #50). Preflight should already
+                    # have rejected unsupported routes; late provider 4xx is
+                    # a terminal media_provider_unsupported failure.
+                    if getattr(agent, "_direct_desktop_media_no_strip", False):
+                        agent._vision_supported = False
+                        agent._flush_status_buffer()
+                        agent._vprint(
+                            f"{agent.log_prefix}❌ Direct desktop media turn: "
+                            f"provider rejected image content — terminal failure "
+                            f"(no strip-and-retry).",
+                            force=True,
+                        )
+                        logger.error(
+                            "%sdirect-desktop no-strip: image rejection is terminal "
+                            "(media_provider_unsupported)",
+                            agent.log_prefix,
+                        )
+                        agent._persist_session(messages, conversation_history)
+                        try:
+                            from agent.direct_desktop_runner import (
+                                media_provider_unsupported_result,
+                            )
+
+                            return media_provider_unsupported_result(
+                                messages,
+                                api_call_count,
+                                detail="provider rejected image content",
+                            )
+                        except Exception:
+                            return {
+                                "final_response": "media_provider_unsupported",
+                                "messages": messages,
+                                "api_calls": api_call_count,
+                                "completed": False,
+                                "failed": True,
+                                "error": "media_provider_unsupported",
+                                "error_code": "media_provider_unsupported",
+                                "media_provider_unsupported": True,
+                            }
                     agent._vision_supported = False
                     _imgs_removed = _strip_images_from_messages(messages)
                     if isinstance(api_messages, list):

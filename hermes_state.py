@@ -122,7 +122,7 @@ T = TypeVar("T")
 
 DEFAULT_DB_PATH = get_hermes_home() / "state.db"
 
-SCHEMA_VERSION = 19
+SCHEMA_VERSION = 20
 
 # Cap on user-controlled FTS5 query input before regex/sanitizer processing.
 # Search queries do not need to be arbitrarily large, and bounding them keeps
@@ -785,6 +785,99 @@ CREATE TABLE IF NOT EXISTS compression_locks (
     holder TEXT NOT NULL,
     acquired_at REAL NOT NULL,
     expires_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS message_attachments (
+    attachment_id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    message_id TEXT NOT NULL,
+    task_id TEXT,
+    ordinal INTEGER NOT NULL DEFAULT 0,
+    mime_type TEXT NOT NULL,
+    display_name TEXT NOT NULL,
+    content_sha256 TEXT NOT NULL,
+    byte_size INTEGER NOT NULL DEFAULT 0,
+    ciphertext_size INTEGER NOT NULL DEFAULT 0,
+    blob_key TEXT,
+    preview_key TEXT,
+    preview_available INTEGER NOT NULL DEFAULT 0,
+    direction TEXT NOT NULL DEFAULT 'input',
+    state TEXT NOT NULL DEFAULT 'PREPARED',
+    key_id TEXT,
+    key_version INTEGER,
+    soft_deleted INTEGER NOT NULL DEFAULT 0,
+    deleted_at REAL,
+    created_at REAL NOT NULL,
+    committed_at REAL,
+    temp_path TEXT,
+    preview_temp_path TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_message_attachments_session
+    ON message_attachments(session_id, message_id, ordinal);
+CREATE INDEX IF NOT EXISTS idx_message_attachments_state
+    ON message_attachments(state, soft_deleted);
+
+CREATE TABLE IF NOT EXISTS desktop_turn_acceptance (
+    acceptance_nonce TEXT PRIMARY KEY,
+    client_request_id TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    task_id TEXT NOT NULL,
+    message_id TEXT NOT NULL,
+    prompt TEXT,
+    request_fingerprint TEXT NOT NULL,
+    state TEXT NOT NULL,
+    finalize_intent INTEGER NOT NULL DEFAULT 0,
+    source TEXT,
+    promotion_journal TEXT,
+    created_at REAL NOT NULL,
+    prepared_at REAL,
+    committed_at REAL,
+    aborted_at REAL
+);
+CREATE INDEX IF NOT EXISTS idx_desktop_turn_session
+    ON desktop_turn_acceptance(session_id, state);
+CREATE INDEX IF NOT EXISTS idx_desktop_turn_client
+    ON desktop_turn_acceptance(client_request_id);
+
+CREATE TABLE IF NOT EXISTS desktop_tasks (
+    task_id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    state TEXT NOT NULL DEFAULT 'pending',
+    terminal_kind TEXT,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_desktop_tasks_session
+    ON desktop_tasks(session_id);
+
+CREATE TABLE IF NOT EXISTS desktop_task_messages (
+    task_id TEXT NOT NULL,
+    message_id TEXT NOT NULL,
+    role TEXT NOT NULL,
+    text TEXT,
+    created_at REAL NOT NULL,
+    PRIMARY KEY (task_id, message_id)
+);
+CREATE INDEX IF NOT EXISTS idx_desktop_task_messages_message
+    ON desktop_task_messages(message_id);
+
+CREATE TABLE IF NOT EXISTS desktop_event_journal (
+    event_key TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    seq INTEGER,
+    state TEXT NOT NULL,
+    payload_json TEXT,
+    created_at REAL NOT NULL,
+    finalized_at REAL
+);
+CREATE INDEX IF NOT EXISTS idx_desktop_event_session_state
+    ON desktop_event_journal(session_id, state, seq);
+
+CREATE TABLE IF NOT EXISTS desktop_session_fence (
+    session_id TEXT PRIMARY KEY,
+    status TEXT NOT NULL,
+    acquired_at REAL,
+    drained_at REAL,
+    released_at REAL
 );
 
 CREATE INDEX IF NOT EXISTS idx_sessions_source ON sessions(source);
@@ -6390,6 +6483,548 @@ class SessionDB:
                 (error[:500], session_id),
             )
         self._execute_write(_do)
+
+
+
+    # ── Direct-desktop media plane (issue #50) ─────────────────────────────
+
+    def insert_prepared_desktop_turn(
+        self,
+        *,
+        acceptance_nonce: str,
+        client_request_id: str,
+        session_id: str,
+        task_id: str,
+        message_id: str,
+        prompt: str,
+        request_fingerprint: str,
+        source: str = "desktop",
+        attachments: List[Dict[str, Any]],
+        promotion_journal: Any,
+    ) -> None:
+        """Insert PREPARED turn + hidden attachment rows in one write txn."""
+        now = time.time()
+        journal_json = (
+            promotion_journal
+            if isinstance(promotion_journal, str)
+            else json.dumps(promotion_journal or [], separators=(",", ":"))
+        )
+
+        def _do(conn):
+            existing = conn.execute(
+                "SELECT id FROM sessions WHERE id = ?", (session_id,)
+            ).fetchone()
+            if existing is None:
+                conn.execute(
+                    "INSERT INTO sessions (id, source, started_at, message_count) "
+                    "VALUES (?, ?, ?, 0)",
+                    (session_id, source or "desktop", now),
+                )
+
+            conn.execute(
+                """INSERT INTO desktop_turn_acceptance (
+                       acceptance_nonce, client_request_id, session_id, task_id,
+                       message_id, prompt, request_fingerprint, state,
+                       finalize_intent, source, promotion_journal,
+                       created_at, prepared_at
+                   ) VALUES (?, ?, ?, ?, ?, ?, ?, 'PREPARED', 0, ?, ?, ?, ?)""",
+                (
+                    acceptance_nonce,
+                    client_request_id,
+                    session_id,
+                    task_id,
+                    message_id,
+                    prompt,
+                    request_fingerprint,
+                    source,
+                    journal_json,
+                    now,
+                    now,
+                ),
+            )
+            conn.execute(
+                """INSERT OR IGNORE INTO desktop_tasks
+                   (task_id, session_id, state, terminal_kind, created_at, updated_at)
+                   VALUES (?, ?, 'running', NULL, ?, ?)""",
+                (task_id, session_id, now, now),
+            )
+            conn.execute(
+                """INSERT OR REPLACE INTO desktop_task_messages
+                   (task_id, message_id, role, text, created_at)
+                   VALUES (?, ?, 'user', ?, ?)""",
+                (task_id, message_id, prompt or "", now),
+            )
+            for att in attachments or []:
+                conn.execute(
+                    """INSERT INTO message_attachments (
+                           attachment_id, session_id, message_id, task_id, ordinal,
+                           mime_type, display_name, content_sha256, byte_size,
+                           ciphertext_size, blob_key, preview_key, preview_available,
+                           direction, state, key_id, key_version, soft_deleted,
+                           created_at, temp_path, preview_temp_path
+                       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PREPARED',
+                                 ?, ?, 0, ?, ?, ?)""",
+                    (
+                        att["attachment_id"],
+                        att.get("session_id") or session_id,
+                        att.get("message_id") or message_id,
+                        att.get("task_id") or task_id,
+                        int(att.get("ordinal") or 0),
+                        att["mime_type"],
+                        att["display_name"],
+                        att["content_sha256"],
+                        int(att.get("byte_size") or 0),
+                        int(att.get("ciphertext_size") or 0),
+                        att.get("blob_key"),
+                        att.get("preview_key"),
+                        1 if att.get("preview_available") else 0,
+                        att.get("direction") or "input",
+                        att.get("key_id"),
+                        att.get("key_version"),
+                        now,
+                        att.get("temp_path"),
+                        att.get("preview_temp_path"),
+                    ),
+                )
+
+        self._execute_write(_do)
+
+    def get_desktop_turn_acceptance(self, acceptance_nonce: str) -> Optional[Dict[str, Any]]:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM desktop_turn_acceptance WHERE acceptance_nonce = ?",
+                (acceptance_nonce,),
+            ).fetchone()
+        if row is None:
+            return None
+        data = dict(row)
+        journal = data.get("promotion_journal")
+        if isinstance(journal, str) and journal:
+            try:
+                data["promotion_journal"] = json.loads(journal)
+            except Exception:
+                data["promotion_journal"] = []
+        else:
+            data["promotion_journal"] = journal or []
+        return data
+
+    def mark_desktop_finalize_intent(self, acceptance_nonce: str) -> None:
+        def _do(conn):
+            cur = conn.execute(
+                "UPDATE desktop_turn_acceptance "
+                "SET finalize_intent = 1, state = CASE "
+                "  WHEN state = 'PREPARED' THEN 'FINALIZE_INTENT' ELSE state END "
+                "WHERE acceptance_nonce = ? AND finalize_intent = 0",
+                (acceptance_nonce,),
+            )
+            if cur.rowcount == 0:
+                exists = conn.execute(
+                    "SELECT 1 FROM desktop_turn_acceptance WHERE acceptance_nonce = ?",
+                    (acceptance_nonce,),
+                ).fetchone()
+                if exists is None:
+                    raise KeyError(acceptance_nonce)
+
+        self._execute_write(_do)
+
+    def update_desktop_promotion_journal(
+        self, acceptance_nonce: str, journal: Any
+    ) -> None:
+        journal_json = (
+            journal if isinstance(journal, str) else json.dumps(journal or [], separators=(",", ":"))
+        )
+
+        def _do(conn):
+            conn.execute(
+                "UPDATE desktop_turn_acceptance SET promotion_journal = ? "
+                "WHERE acceptance_nonce = ?",
+                (journal_json, acceptance_nonce),
+            )
+
+        self._execute_write(_do)
+
+    def commit_desktop_turn(self, acceptance_nonce: str) -> Dict[str, Any]:
+        now = time.time()
+
+        def _do(conn):
+            row = conn.execute(
+                "SELECT * FROM desktop_turn_acceptance WHERE acceptance_nonce = ?",
+                (acceptance_nonce,),
+            ).fetchone()
+            if row is None:
+                raise KeyError(acceptance_nonce)
+            data = dict(row)
+            conn.execute(
+                "UPDATE desktop_turn_acceptance "
+                "SET state = 'COMMITTED', committed_at = ?, finalize_intent = 1 "
+                "WHERE acceptance_nonce = ?",
+                (now, acceptance_nonce),
+            )
+            conn.execute(
+                "UPDATE message_attachments SET state = 'COMMITTED', committed_at = ? "
+                "WHERE message_id = ?",
+                (now, data["message_id"]),
+            )
+            conn.execute(
+                "UPDATE message_attachments SET temp_path = NULL, preview_temp_path = NULL "
+                "WHERE message_id = ?",
+                (data["message_id"],),
+            )
+            conn.execute(
+                "UPDATE desktop_tasks SET state = 'running', updated_at = ? WHERE task_id = ?",
+                (now, data["task_id"]),
+            )
+            return data
+
+        data = self._execute_write(_do)
+        data["state"] = "COMMITTED"
+        data["committed_at"] = now
+        journal = data.get("promotion_journal")
+        if isinstance(journal, str) and journal:
+            try:
+                data["promotion_journal"] = json.loads(journal)
+            except Exception:
+                data["promotion_journal"] = []
+        return data
+
+    def abort_desktop_turn(self, acceptance_nonce: str) -> None:
+        now = time.time()
+
+        def _do(conn):
+            row = conn.execute(
+                "SELECT message_id FROM desktop_turn_acceptance WHERE acceptance_nonce = ?",
+                (acceptance_nonce,),
+            ).fetchone()
+            if row is None:
+                return
+            message_id = row["message_id"] if isinstance(row, sqlite3.Row) else row[0]
+            conn.execute(
+                "UPDATE desktop_turn_acceptance "
+                "SET state = 'ABORTED', aborted_at = ? WHERE acceptance_nonce = ?",
+                (now, acceptance_nonce),
+            )
+            conn.execute(
+                "UPDATE message_attachments SET state = 'ABORTED' WHERE message_id = ?",
+                (message_id,),
+            )
+
+        self._execute_write(_do)
+
+    def list_desktop_turns_for_reconcile(self) -> List[Dict[str, Any]]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM desktop_turn_acceptance "
+                "WHERE state IN ('PREPARED', 'FINALIZE_INTENT') "
+                "   OR (finalize_intent = 1 AND state != 'COMMITTED')"
+            ).fetchall()
+        out = []
+        for row in rows:
+            data = dict(row)
+            journal = data.get("promotion_journal")
+            if isinstance(journal, str) and journal:
+                try:
+                    data["promotion_journal"] = json.loads(journal)
+                except Exception:
+                    data["promotion_journal"] = []
+            out.append(data)
+        return out
+
+    def get_message_attachment(
+        self, attachment_id: str, *, include_deleted: bool = False
+    ) -> Optional[Dict[str, Any]]:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM message_attachments WHERE attachment_id = ?",
+                (attachment_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        data = dict(row)
+        if data.get("soft_deleted") and not include_deleted:
+            return None
+        return data
+
+    def list_message_attachments(
+        self, message_id: str, *, include_prepared: bool = False
+    ) -> List[Dict[str, Any]]:
+        if not message_id:
+            return []
+        with self._lock:
+            if include_prepared:
+                rows = self._conn.execute(
+                    "SELECT * FROM message_attachments WHERE message_id = ? "
+                    "AND soft_deleted = 0 ORDER BY ordinal ASC",
+                    (message_id,),
+                ).fetchall()
+            else:
+                rows = self._conn.execute(
+                    "SELECT * FROM message_attachments WHERE message_id = ? "
+                    "AND state = 'COMMITTED' AND soft_deleted = 0 ORDER BY ordinal ASC",
+                    (message_id,),
+                ).fetchall()
+        return [
+            {
+                "attachmentId": r["attachment_id"],
+                "attachment_id": r["attachment_id"],
+                "ordinal": r["ordinal"],
+                "mimeType": r["mime_type"],
+                "mime_type": r["mime_type"],
+                "displayName": r["display_name"],
+                "display_name": r["display_name"],
+                "previewAvailable": bool(r["preview_available"]),
+                "preview_available": bool(r["preview_available"]),
+                "direction": r["direction"],
+                "blob_key": r["blob_key"],
+                "preview_key": r["preview_key"],
+                "state": r["state"],
+                "session_id": r["session_id"],
+                "message_id": r["message_id"],
+                "content_sha256": r["content_sha256"],
+                "byte_size": r["byte_size"],
+            }
+            for r in rows
+        ]
+
+    def soft_delete_message_attachment(self, attachment_id: str) -> None:
+        now = time.time()
+
+        def _do(conn):
+            conn.execute(
+                "UPDATE message_attachments SET soft_deleted = 1, deleted_at = ? "
+                "WHERE attachment_id = ?",
+                (now, attachment_id),
+            )
+
+        self._execute_write(_do)
+
+    def undelete_message_attachment(self, attachment_id: str) -> None:
+        def _do(conn):
+            conn.execute(
+                "UPDATE message_attachments SET soft_deleted = 0, deleted_at = NULL "
+                "WHERE attachment_id = ?",
+                (attachment_id,),
+            )
+
+        self._execute_write(_do)
+
+    def max_final_seq(self, session_id: str) -> int:
+        """Highest FINALIZED event seq for *session_id*, or -1 when none exist."""
+        with self._lock:
+            try:
+                row = self._conn.execute(
+                    "SELECT MAX(seq) AS m FROM desktop_event_journal "
+                    "WHERE session_id = ? AND state = 'FINALIZED' AND seq IS NOT NULL",
+                    (session_id,),
+                ).fetchone()
+            except sqlite3.OperationalError:
+                return -1
+        if row is None:
+            return -1
+        val = row["m"] if isinstance(row, sqlite3.Row) else row[0]
+        return -1 if val is None else int(val)
+
+    def finalize_event_key(
+        self,
+        session_id: str,
+        event_key: str,
+        *,
+        payload: Optional[Dict[str, Any]] = None,
+        desired_seq: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """UNSEQUENCED → FINALIZED CAS; same key returns existing seq."""
+
+        def _do(conn):
+            existing = conn.execute(
+                "SELECT * FROM desktop_event_journal WHERE event_key = ?",
+                (event_key,),
+            ).fetchone()
+            now = time.time()
+            if existing is not None:
+                data = dict(existing)
+                if data.get("session_id") != session_id:
+                    raise ValueError("event_key session mismatch")
+                if data.get("state") == "FINALIZED":
+                    return {
+                        "eventKey": event_key,
+                        "sessionId": session_id,
+                        "seq": data.get("seq"),
+                        "state": "FINALIZED",
+                        "created": False,
+                        "createdAt": data.get("created_at"),
+                        "finalizedAt": data.get("finalized_at"),
+                    }
+                row = conn.execute(
+                    "SELECT MAX(seq) AS m FROM desktop_event_journal "
+                    "WHERE session_id = ? AND state = 'FINALIZED' AND seq IS NOT NULL",
+                    (session_id,),
+                ).fetchone()
+                m = row["m"] if row is not None else None
+                next_seq = int(desired_seq) if desired_seq is not None else (0 if m is None else int(m) + 1)
+                conn.execute(
+                    "UPDATE desktop_event_journal SET seq = ?, state = 'FINALIZED', "
+                    "finalized_at = ? WHERE event_key = ?",
+                    (next_seq, now, event_key),
+                )
+                return {
+                    "eventKey": event_key,
+                    "sessionId": session_id,
+                    "seq": next_seq,
+                    "state": "FINALIZED",
+                    "created": True,
+                    "createdAt": data.get("created_at"),
+                    "finalizedAt": now,
+                }
+            payload_json = json.dumps(payload or {}, separators=(",", ":"), sort_keys=True)
+            row = conn.execute(
+                "SELECT MAX(seq) AS m FROM desktop_event_journal "
+                "WHERE session_id = ? AND state = 'FINALIZED' AND seq IS NOT NULL",
+                (session_id,),
+            ).fetchone()
+            m = row["m"] if row is not None else None
+            next_seq = int(desired_seq) if desired_seq is not None else (0 if m is None else int(m) + 1)
+            conn.execute(
+                "INSERT INTO desktop_event_journal "
+                "(event_key, session_id, seq, state, payload_json, created_at, finalized_at) "
+                "VALUES (?, ?, ?, 'FINALIZED', ?, ?, ?)",
+                (event_key, session_id, next_seq, payload_json, now, now),
+            )
+            return {
+                "eventKey": event_key,
+                "sessionId": session_id,
+                "seq": next_seq,
+                "state": "FINALIZED",
+                "created": True,
+                "createdAt": now,
+                "finalizedAt": now,
+            }
+
+        return self._execute_write(_do)
+
+    def fence_session(self, session_id: str, op: str) -> Dict[str, Any]:
+        """Fence acquire/drain/release stubs used by get_session snapshots."""
+        now = time.time()
+        op = (op or "acquire").lower()
+
+        def _do(conn):
+            row = conn.execute(
+                "SELECT * FROM desktop_session_fence WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+            if op == "acquire":
+                if row is None:
+                    conn.execute(
+                        "INSERT INTO desktop_session_fence "
+                        "(session_id, status, acquired_at) VALUES (?, 'acquired', ?)",
+                        (session_id, now),
+                    )
+                else:
+                    conn.execute(
+                        "UPDATE desktop_session_fence SET status = 'acquired', "
+                        "acquired_at = ?, drained_at = NULL, released_at = NULL "
+                        "WHERE session_id = ?",
+                        (now, session_id),
+                    )
+                return {"sessionId": session_id, "status": "acquired"}
+            if op == "drain":
+                conn.execute(
+                    "UPDATE desktop_session_fence SET status = 'drained', drained_at = ? "
+                    "WHERE session_id = ?",
+                    (now, session_id),
+                )
+                return {"sessionId": session_id, "status": "drained"}
+            if op == "release":
+                conn.execute(
+                    "UPDATE desktop_session_fence SET status = 'free', released_at = ? "
+                    "WHERE session_id = ?",
+                    (now, session_id),
+                )
+                return {"sessionId": session_id, "status": "free"}
+            raise ValueError(f"unknown fence op: {op}")
+
+        return self._execute_write(_do)
+
+    def drain_session_fence(self, session_id: str) -> Dict[str, Any]:
+        return self.fence_session(session_id, "drain")
+
+    def build_desktop_session_snapshot(self, session_id: str) -> Dict[str, Any]:
+        """Protocol ``kmanus.hermes.session.v1`` snapshot with replayWatermark."""
+        watermark = self.max_final_seq(session_id)
+        if watermark < 0:
+            watermark = 0
+
+        with self._lock:
+            msg_rows = self._conn.execute(
+                "SELECT * FROM desktop_task_messages WHERE task_id IN "
+                "(SELECT task_id FROM desktop_tasks WHERE session_id = ?) "
+                "ORDER BY created_at ASC",
+                (session_id,),
+            ).fetchall()
+            task_rows = self._conn.execute(
+                "SELECT * FROM desktop_tasks WHERE session_id = ? ORDER BY created_at ASC",
+                (session_id,),
+            ).fetchall()
+
+        messages: List[Dict[str, Any]] = []
+        for m in msg_rows:
+            mid = m["message_id"]
+            atts = self.list_message_attachments(mid, include_prepared=False)
+            messages.append(
+                {
+                    "messageId": mid,
+                    "taskId": m["task_id"],
+                    "role": m["role"],
+                    "createdAt": _iso_ts(m["created_at"]),
+                    "text": m["text"] or "",
+                    "attachments": [
+                        {
+                            "attachmentId": a["attachmentId"],
+                            "ordinal": a["ordinal"],
+                            "mimeType": a["mimeType"],
+                            "displayName": a["displayName"],
+                            "previewAvailable": bool(a["previewAvailable"]),
+                            "direction": a.get("direction") or "input",
+                        }
+                        for a in atts
+                    ],
+                }
+            )
+
+        tasks: List[Dict[str, Any]] = []
+        for t in task_rows:
+            with self._lock:
+                mids = [
+                    r["message_id"]
+                    for r in self._conn.execute(
+                        "SELECT message_id FROM desktop_task_messages WHERE task_id = ? "
+                        "ORDER BY created_at ASC",
+                        (t["task_id"],),
+                    ).fetchall()
+                ]
+            tasks.append(
+                {
+                    "taskId": t["task_id"],
+                    "state": t["state"] or "pending",
+                    "terminalKind": t["terminal_kind"],
+                    "messageIds": mids,
+                }
+            )
+
+        return {
+            "version": "kmanus.hermes.session.v1",
+            "sessionId": session_id,
+            "replayWatermark": watermark,
+            "messages": messages,
+            "tasks": tasks,
+        }
+
+
+def _iso_ts(ts: Any) -> str:
+    """Format a unix timestamp as RFC3339 UTC."""
+    try:
+        return time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime(float(ts)))
+    except Exception:
+        return time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime())
+
 
 
 class AsyncSessionDB:
