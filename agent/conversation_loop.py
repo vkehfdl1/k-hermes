@@ -34,6 +34,12 @@ from agent.error_classifier import FailoverReason, classify_api_error
 from agent.iteration_budget import IterationBudget
 from agent.turn_context import build_turn_context
 from agent.turn_retry_state import TurnRetryState
+from agent.managed_proxy import (
+    apply_managed_correlation_headers,
+    normalize_managed_codex_kwargs,
+    should_block_same_id_recovery,
+    single_dispatch_failed_result,
+)
 from agent.memory_manager import build_memory_context_block
 from agent.message_sanitization import (
     close_interrupted_tool_sequence,
@@ -1091,6 +1097,19 @@ def run_conversation(
         _retry = TurnRetryState()
         max_compression_attempts = 3
 
+        def _block_same_id_recovery(recovery_reason: str, api_error: BaseException):
+            """Return fail payload when single_dispatch blocks same-id recovery."""
+            if not should_block_same_id_recovery(agent, recovery_reason):
+                return None
+            agent._flush_status_buffer()
+            agent._persist_session(messages, conversation_history)
+            return single_dispatch_failed_result(
+                messages=messages,
+                api_call_count=api_call_count,
+                api_error=api_error,
+                recovery_reason=recovery_reason,
+            )
+
         finish_reason = "stop"
         response = None  # Guard against UnboundLocalError if all retries fail
         api_kwargs = None  # Guard against UnboundLocalError in except handler
@@ -1163,6 +1182,20 @@ def run_conversation(
                     _sanitize_structure_non_ascii(api_kwargs)
                 if agent.api_mode == "codex_responses":
                     api_kwargs = agent._get_transport().preflight_kwargs(api_kwargs, allow_stream=False)
+                if bool(getattr(agent, "single_dispatch_mode", False)):
+                    # Managed origin: correlation headers + body contract.
+                    api_kwargs = normalize_managed_codex_kwargs(api_kwargs)
+                    _managed_task = (
+                        getattr(agent, "_managed_task_id", None)
+                        or effective_task_id
+                        or None
+                    )
+                    api_kwargs = apply_managed_correlation_headers(
+                        api_kwargs,
+                        session_id=agent.session_id or None,
+                        task_id=_managed_task,
+                        api_request_id=api_request_id,
+                    )
                 # Copilot x-initiator: the first API call of a user turn is
                 # marked "user" so Copilot bills a premium request; tool-loop
                 # follow-ups keep the default "agent" header (#3040).
@@ -1456,6 +1489,13 @@ def run_conversation(
                     if agent.thinking_callback:
                         agent.thinking_callback("")
                     
+                    _sd_blocked = _block_same_id_recovery(
+                        "invalid_api_response",
+                        RuntimeError(", ".join(error_details) or "Invalid API response"),
+                    )
+                    if _sd_blocked is not None:
+                        return _sd_blocked
+
                     # Invalid response — could be rate limiting, provider timeout,
                     # upstream server error, or malformed response.
                     retry_count += 1
@@ -2303,6 +2343,56 @@ def run_conversation(
                     thinking_spinner = None
                 if agent.thinking_callback:
                     agent.thinking_callback("")
+
+                # Managed single-dispatch: any recovery that would re-issue
+                # HTTP for the same api_request_id is blocked. Map to the
+                # recovery-reason table when classification is free; fall
+                # back to unknown_classified_recovery (fail closed).
+                if bool(getattr(agent, "single_dispatch_mode", False)):
+                    _sd_reason = "unknown_classified_recovery"
+                    try:
+                        from agent.error_classifier import classify_api_error as _sd_classify
+                        _sd_cls = _sd_classify(
+                            api_error,
+                            provider=getattr(agent, "provider", "") or "",
+                            model=getattr(agent, "model", "") or "",
+                        )
+                        _sd_map = {
+                            "thinking_signature": "thinking_signature",
+                            "invalid_encrypted_content": "invalid_encrypted_content",
+                            "llama_cpp_grammar_pattern": "llama_cpp_grammar_pattern",
+                            "context_overflow": "context_compression",
+                            "payload_too_large": "context_compression",
+                            "rate_limit": "rate_limit_retry",
+                            "billing": "billing_retry",
+                            "timeout": "timeout_retry",
+                            "auth": "auth_refresh",
+                        }
+                        _sd_reason = _sd_map.get(
+                            getattr(getattr(_sd_cls, "reason", None), "value", None)
+                            or str(getattr(_sd_cls, "reason", "") or ""),
+                            "unknown_classified_recovery",
+                        )
+                        # Grammar/schema sanitation shares the table entry.
+                        if _sd_reason == "llama_cpp_grammar_pattern":
+                            _sd_reason = "grammar_schema_sanitation"
+                    except Exception:
+                        _err_l = str(api_error).lower()
+                        if "thinking" in _err_l and "signature" in _err_l:
+                            _sd_reason = "thinking_signature"
+                        elif "invalid_encrypted_content" in _err_l or "encrypted reasoning" in _err_l:
+                            _sd_reason = "invalid_encrypted_content"
+                        elif "expected to have received" in _err_l and "response.created" in _err_l:
+                            _sd_reason = "missing_response_created"
+                        elif "did not emit a terminal" in _err_l:
+                            _sd_reason = "missing_terminal"
+                        elif "nonetype" in _err_l and "output" in _err_l:
+                            _sd_reason = "null_final_output"
+                        elif "parse" in _err_l or "prelude" in _err_l:
+                            _sd_reason = "parser_prelude_failure"
+                    _sd_blocked = _block_same_id_recovery(_sd_reason, api_error)
+                    if _sd_blocked is not None:
+                        return _sd_blocked
 
                 # -----------------------------------------------------------
                 # UnicodeEncodeError recovery.  Two common causes:
@@ -4217,6 +4307,12 @@ def run_conversation(
             break
 
         if _retry.restart_with_compressed_messages:
+            _sd_blocked = _block_same_id_recovery(
+                "context_compression",
+                RuntimeError("context compression / retry blocked under single_dispatch_mode"),
+            )
+            if _sd_blocked is not None:
+                return _sd_blocked
             api_call_count -= 1
             agent.iteration_budget.refund()
             # Count compression restarts toward the retry limit to prevent
@@ -4227,6 +4323,12 @@ def run_conversation(
             continue
 
         if _retry.restart_with_rebuilt_messages:
+            _sd_blocked = _block_same_id_recovery(
+                "unknown_classified_recovery",
+                RuntimeError("rebuilt-message restart blocked under single_dispatch_mode"),
+            )
+            if _sd_blocked is not None:
+                return _sd_blocked
             # A content-filter stream stall (#32421) was escalated to the
             # fallback chain and the partial content rolled back.  Re-issue
             # the API call against the now-active fallback provider.  Refund
@@ -4238,6 +4340,12 @@ def run_conversation(
             continue
 
         if _retry.restart_with_length_continuation:
+            _sd_blocked = _block_same_id_recovery(
+                "context_retry",
+                RuntimeError("length continuation blocked under single_dispatch_mode"),
+            )
+            if _sd_blocked is not None:
+                return _sd_blocked
             # Progressively boost the output token budget on each retry.
             # Retry 1 → 2× base, retry 2 → 4× base, retry 3 → 8× base,
             # retry 4 → 16× base, then cap at 32 768.
@@ -4372,6 +4480,12 @@ def run_conversation(
                 agent._buffer_vprint("⚠️  Incomplete <REASONING_SCRATCHPAD> detected (opened but never closed)")
                 
                 if agent._incomplete_scratchpad_retries <= 2:
+                    _sd_blocked = _block_same_id_recovery(
+                        "parser_prelude_failure",
+                        RuntimeError("incomplete REASONING_SCRATCHPAD"),
+                    )
+                    if _sd_blocked is not None:
+                        return _sd_blocked
                     agent._buffer_vprint(f"🔄 Retrying API call ({agent._incomplete_scratchpad_retries}/2)...")
                     # Don't add the broken message, just retry
                     continue
@@ -4438,6 +4552,12 @@ def run_conversation(
                         agent._emit_interim_assistant_message(interim_msg)
 
                 if agent._codex_incomplete_retries < 3:
+                    _sd_blocked = _block_same_id_recovery(
+                        "invalid_terminal",
+                        RuntimeError("codex incomplete terminal continuation"),
+                    )
+                    if _sd_blocked is not None:
+                        return _sd_blocked
                     if not agent.quiet_mode:
                         agent._vprint(f"{agent.log_prefix}↻ Codex response incomplete; continuing turn ({agent._codex_incomplete_retries}/3)")
                     agent._session_messages = messages
@@ -4598,6 +4718,12 @@ def run_conversation(
                     agent._buffer_vprint(f"⚠️  Invalid JSON in tool call arguments for '{tool_name}': {error_msg}")
 
                     if agent._invalid_json_retries < 3:
+                        _sd_blocked = _block_same_id_recovery(
+                            "grammar_schema_sanitation",
+                            RuntimeError(f"invalid tool-call JSON arguments for '{tool_name}'"),
+                        )
+                        if _sd_blocked is not None:
+                            return _sd_blocked
                         agent._buffer_vprint(f"🔄 Retrying API call ({agent._invalid_json_retries}/3)...")
                         # Don't add anything to messages, just retry the API call
                         continue
@@ -4973,6 +5099,15 @@ def run_conversation(
                         or _has_inline_thinking
                     )
                     if _has_structured and agent._thinking_prefill_retries < 2:
+                        # Thinking-only prefill continues the outer loop and
+                        # re-issues for empty final output — blocked under
+                        # managed single_dispatch (null_final_output family).
+                        _sd_blocked = _block_same_id_recovery(
+                            "null_final_output",
+                            RuntimeError("thinking-only empty final output"),
+                        )
+                        if _sd_blocked is not None:
+                            return _sd_blocked
                         agent._thinking_prefill_retries += 1
                         logger.info(
                             "Thinking-only response (no visible content) — "
@@ -5008,6 +5143,12 @@ def run_conversation(
                         and agent._thinking_prefill_retries >= 2
                     )
                     if _truly_empty and (not _has_structured or _prefill_exhausted) and agent._empty_content_retries < 3:
+                        _sd_blocked = _block_same_id_recovery(
+                            "null_final_output",
+                            RuntimeError("null/empty final output"),
+                        )
+                        if _sd_blocked is not None:
+                            return _sd_blocked
                         agent._empty_content_retries += 1
                         logger.warning(
                             "Empty response (no content or reasoning) — "

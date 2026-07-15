@@ -826,7 +826,12 @@ def run_codex_stream(agent, api_kwargs: dict, client: Any = None, on_first_delta
     import httpx as _httpx
 
     active_client = client or agent._ensure_primary_openai_client(reason="codex_stream_direct")
-    max_stream_retries = 1
+    # Managed single_dispatch clients must never re-open a stream for the same
+    # api_request_id — max_stream_retries=0 means one attempt only.
+    if bool(getattr(agent, "single_dispatch_mode", False)):
+        max_stream_retries = 0
+    else:
+        max_stream_retries = 1
     # Accumulate streamed text so callers / compat shims can read it.
     agent._codex_streamed_text_parts: list = []
 

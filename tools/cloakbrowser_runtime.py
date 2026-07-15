@@ -173,7 +173,13 @@ def launch_cloakserve() -> None:
     else:
         popen_extra["start_new_session"] = True
     try:
-        _process = subprocess.Popen(cmd, **popen_extra)
+        # stdin is in popen_extra; pass it explicitly so the TUI stdin-guard
+        # static check sees the keyword on the call site.
+        _process = subprocess.Popen(
+            cmd,
+            stdin=popen_extra.get("stdin", subprocess.DEVNULL),
+            **{k: v for k, v in popen_extra.items() if k != "stdin"},
+        )
     except OSError as exc:
         raise RuntimeError(
             "Failed to start CloakBrowser cloakserve from "

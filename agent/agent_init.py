@@ -329,6 +329,7 @@ def init_agent(
     checkpoint_max_total_size_mb: int = 500,
     checkpoint_max_file_size_mb: int = 10,
     pass_session_id: bool = False,
+    single_dispatch_mode: bool = None,
 ):
     """
     Initialize the AI Agent.
@@ -1495,6 +1496,32 @@ def init_agent(
     except (TypeError, ValueError):
         _api_retries = 3
     agent._api_max_retries = _api_retries
+
+    # Managed Responses proxy: exact origin => single_dispatch_mode.
+    # When true: max_stream_retries=0, outer attempts=1, empty fallback,
+    # same-api_request_id recovery continues are blocked.
+    from agent.managed_proxy import resolve_single_dispatch_mode
+    agent.single_dispatch_mode = resolve_single_dispatch_mode(
+        base_url=getattr(agent, "base_url", None) or base_url,
+        explicit=single_dispatch_mode,
+    )
+    if agent.single_dispatch_mode:
+        agent._api_max_retries = 1
+        agent._fallback_chain = []
+        agent._fallback_model = None
+        agent._fallback_index = 0
+        agent._fallback_activated = False
+        # Desktop managed turns pin max_tokens=256 -> wire max_output_tokens.
+        if not getattr(agent, "max_tokens", None):
+            agent.max_tokens = 256
+        # Prefer codex_responses for the managed origin contract.
+        if getattr(agent, "api_mode", None) not in {"codex_responses", "codex_app_server"}:
+            agent.api_mode = "codex_responses"
+            if hasattr(agent, "_transport_cache"):
+                try:
+                    agent._transport_cache.clear()
+                except Exception:
+                    pass
 
     # Initialize context compressor for automatic context management
     # Compresses conversation when approaching model's context limit

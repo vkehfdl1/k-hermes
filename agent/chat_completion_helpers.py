@@ -752,13 +752,17 @@ def build_api_kwargs(agent, api_messages: list) -> dict:
                     getattr(agent, "log_prefix", ""), exc,
                 )
 
+        _sd = bool(getattr(agent, "single_dispatch_mode", False))
+        _max_tokens = agent.max_tokens
+        if _sd and (_max_tokens is None or _max_tokens == 0):
+            _max_tokens = 256
         return _ct.build_kwargs(
             model=agent.model,
             messages=_msgs_for_codex,
             tools=tools_for_api,
             reasoning_config=agent.reasoning_config,
             session_id=getattr(agent, "session_id", None),
-            max_tokens=agent.max_tokens,
+            max_tokens=_max_tokens,
             timeout=agent._resolved_api_call_timeout(),
             request_overrides=agent.request_overrides,
             is_github_responses=is_github_responses,
@@ -767,6 +771,13 @@ def build_api_kwargs(agent, api_messages: list) -> dict:
             github_reasoning_extra=agent._github_models_reasoning_extra_body() if is_github_responses else None,
             replay_encrypted_reasoning=bool(
                 getattr(agent, "_codex_reasoning_replay_enabled", True)
+            ),
+            single_dispatch_mode=_sd,
+            api_request_id=getattr(agent, "_current_api_request_id", None) or None,
+            task_id=(
+                getattr(agent, "_managed_task_id", None)
+                or getattr(agent, "_current_task_id", None)
+                or None
             ),
         )
 

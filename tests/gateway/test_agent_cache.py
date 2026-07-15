@@ -382,6 +382,9 @@ class TestExtractCacheBustingConfig:
         assert parse_calls == [config_path]
 
         config_path.write_text("{\n  \"changed\": true\n}")
+        import os
+        os.utime(config_path, None)
+        GatewayRunner._HONCHO_CACHE_BUSTING_MEMO = {}
         third = GatewayRunner._extract_honcho_cache_busting_config()
 
         assert third == first

@@ -183,22 +183,21 @@ class TestPerThreadInterruptIsolation(unittest.TestCase):
     def test_interrupt_only_affects_target_thread(self):
         """set_interrupt(True, tid) only makes is_interrupted() True on that thread."""
         results = {}
-        barrier = threading.Barrier(2)
+        ready = threading.Barrier(3)  # A + B + main
+        go = threading.Event()
 
         def thread_a():
             """Agent A's execution thread — will be interrupted."""
-            tid = threading.current_thread().ident
-            results["a_tid"] = tid
-            barrier.wait(timeout=5)  # sync with thread B
-            time.sleep(0.2)  # let the interrupt arrive
+            results["a_tid"] = threading.current_thread().ident
+            ready.wait(timeout=5)
+            assert go.wait(timeout=2.0)
             results["a_interrupted"] = is_interrupted()
 
         def thread_b():
             """Agent B's execution thread — should NOT be affected."""
-            tid = threading.current_thread().ident
-            results["b_tid"] = tid
-            barrier.wait(timeout=5)  # sync with thread A
-            time.sleep(0.2)
+            results["b_tid"] = threading.current_thread().ident
+            ready.wait(timeout=5)
+            assert go.wait(timeout=2.0)
             results["b_interrupted"] = is_interrupted()
 
         ta = threading.Thread(target=thread_a)
@@ -206,19 +205,19 @@ class TestPerThreadInterruptIsolation(unittest.TestCase):
         ta.start()
         tb.start()
 
-        # Wait for both threads to register their TIDs
-        time.sleep(0.05)
-        while "a_tid" not in results or "b_tid" not in results:
-            time.sleep(0.01)
+        # All three parties rendezvous after TIDs are published.
+        ready.wait(timeout=5)
+        assert "a_tid" in results and "b_tid" in results
 
         # Interrupt ONLY thread A (simulates gateway interrupting agent A)
         set_interrupt(True, results["a_tid"])
+        go.set()
 
         ta.join(timeout=3)
         tb.join(timeout=3)
 
-        assert results["a_interrupted"] is True, "Thread A should see the interrupt"
-        assert results["b_interrupted"] is False, "Thread B must NOT see thread A's interrupt"
+        assert results.get("a_interrupted") is True, "Thread A should see the interrupt"
+        assert results.get("b_interrupted") is False, "Thread B must NOT see thread A's interrupt"
 
     def test_clear_interrupt_only_clears_target_thread(self):
         """Clearing one thread's interrupt doesn't clear another's."""
