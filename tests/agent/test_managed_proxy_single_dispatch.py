@@ -28,7 +28,7 @@ from agent.managed_proxy import (
     GOLDEN_VECTOR_2_UUID,
     IDEMPOTENCY_HEADER,
     CLIENT_REQUEST_HEADER,
-    K_MANUS_RESPONSE_NAMESPACE,
+    DOLSHOI_RESPONSE_NAMESPACE,
     MANAGED_PROXY_ORIGIN,
     SAME_ID_RECOVERY_REASONS,
     apply_managed_correlation_headers,
@@ -74,14 +74,14 @@ def test_uuid_v5_golden_vector_1():
     name = build_client_request_name("sess-qa", "task-1", "turn-1:api:0")
     assert name == GOLDEN_VECTOR_1_NAME
     assert derive_client_request_id("sess-qa", "task-1", "turn-1:api:0") == GOLDEN_VECTOR_1_UUID
-    assert str(uuid.uuid5(K_MANUS_RESPONSE_NAMESPACE, GOLDEN_VECTOR_1_NAME)) == GOLDEN_VECTOR_1_UUID
+    assert str(uuid.uuid5(DOLSHOI_RESPONSE_NAMESPACE, GOLDEN_VECTOR_1_NAME)) == GOLDEN_VECTOR_1_UUID
 
 
 def test_uuid_v5_golden_vector_2():
     name = build_client_request_name(None, None, "turn-1:api:1")
     assert name == GOLDEN_VECTOR_2_NAME
     assert derive_client_request_id(None, None, "turn-1:api:1") == GOLDEN_VECTOR_2_UUID
-    assert str(uuid.uuid5(K_MANUS_RESPONSE_NAMESPACE, GOLDEN_VECTOR_2_NAME)) == GOLDEN_VECTOR_2_UUID
+    assert str(uuid.uuid5(DOLSHOI_RESPONSE_NAMESPACE, GOLDEN_VECTOR_2_NAME)) == GOLDEN_VECTOR_2_UUID
 
 
 def test_uuid_v5_same_api_request_id_reuses_key():
@@ -140,8 +140,8 @@ def test_correlation_headers_match_uuid():
     headers = kwargs["extra_headers"]
     assert headers[IDEMPOTENCY_HEADER] == GOLDEN_VECTOR_1_UUID
     assert headers[CLIENT_REQUEST_HEADER] == GOLDEN_VECTOR_1_UUID
-    assert headers["x-k-manus-session-id"] == "sess-qa"
-    assert headers["x-k-manus-task-id"] == "task-1"
+    assert headers["x-dolshoi-session-id"] == "sess-qa"
+    assert headers["x-dolshoi-task-id"] == "task-1"
 
 
 # ── recovery table + gate ───────────────────────────────────────────────

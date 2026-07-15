@@ -15,19 +15,19 @@ from urllib.parse import urlsplit
 # Exact managed origin (scheme + host + path including trailing /v1).
 # TEMPORARY domain: today this host serves the legacy CLI proxy, and the final
 # managed origin is an owner Ready-time decision (same-origin cutover vs
-# router.k-manus.app vs configurable). Until then managed turns fail closed at
+# router.dolshoi.com vs configurable). Until then managed turns fail closed at
 # this origin. Keep in lockstep with the desktop pin
-# (k-manus apps/desktop/src-tauri/src/membership/managed_proxy.rs and
+# (dolshoi apps/desktop/src-tauri/src/membership/managed_proxy.rs and
 # hermes/event_runner.py) — the two sides reject any mismatch.
-MANAGED_PROXY_ORIGIN = "https://proxy.nomadamas.org/v1"
+MANAGED_PROXY_ORIGIN = "https://proxy.dolshoi.com/v1"
 
-# Literal UUIDv5 namespace for Idempotency-Key / x-k-manus-client-request-id.
-K_MANUS_RESPONSE_NAMESPACE = uuid.UUID("6f0f4d78-49a0-5b16-9d1e-8d05c7a4a0b1")
-K_MANUS_RESPONSE_NAME_PREFIX = "k-manus-response-v1|"
+# Literal UUIDv5 namespace for Idempotency-Key / x-dolshoi-client-request-id.
+DOLSHOI_RESPONSE_NAMESPACE = uuid.UUID("6f0f4d78-49a0-5b16-9d1e-8d05c7a4a0b1")
+DOLSHOI_RESPONSE_NAME_PREFIX = "dolshoi-response-v1|"
 
-SESSION_HEADER = "x-k-manus-session-id"
-TASK_HEADER = "x-k-manus-task-id"
-CLIENT_REQUEST_HEADER = "x-k-manus-client-request-id"
+SESSION_HEADER = "x-dolshoi-session-id"
+TASK_HEADER = "x-dolshoi-task-id"
+CLIENT_REQUEST_HEADER = "x-dolshoi-client-request-id"
 IDEMPOTENCY_HEADER = "Idempotency-Key"
 
 # ASCII header contract from model-router: 1..128 of A-Za-z0-9._:-
@@ -135,7 +135,7 @@ def build_client_request_name(
 ) -> str:
     """Build the UUIDv5 name for ``(session_id, task_id, api_request_id)``."""
     return (
-        K_MANUS_RESPONSE_NAME_PREFIX
+        DOLSHOI_RESPONSE_NAME_PREFIX
         + encode_nullable_field(session_id)
         + encode_nullable_field(task_id)
         + encode_nullable_field(api_request_id)
@@ -177,16 +177,16 @@ def derive_client_request_id(
         session_id = validate_correlation_field("session_id", session_id)
         task_id = validate_correlation_field("task_id", task_id)
     name = build_client_request_name(session_id, task_id, api_request_id)
-    return str(uuid.uuid5(K_MANUS_RESPONSE_NAMESPACE, name))
+    return str(uuid.uuid5(DOLSHOI_RESPONSE_NAMESPACE, name))
 
 
 # Golden vectors from the frozen plan (byte-match required).
 GOLDEN_VECTOR_1_NAME = (
-    "k-manus-response-v1|S00000007:sess-qa;S00000006:task-1;S0000000c:turn-1:api:0;"
+    "dolshoi-response-v1|S00000007:sess-qa;S00000006:task-1;S0000000c:turn-1:api:0;"
 )
-GOLDEN_VECTOR_1_UUID = "ce14c64c-5f4b-562e-9e99-26f03cfbc899"
-GOLDEN_VECTOR_2_NAME = "k-manus-response-v1|N;N;S0000000c:turn-1:api:1;"
-GOLDEN_VECTOR_2_UUID = "b1e929dd-c4bb-56af-aea2-56167eed5b48"
+GOLDEN_VECTOR_1_UUID = "9c387b65-975f-5b4b-8c0a-1109d0cca18f"
+GOLDEN_VECTOR_2_NAME = "dolshoi-response-v1|N;N;S0000000c:turn-1:api:1;"
+GOLDEN_VECTOR_2_UUID = "a9e68320-3867-571e-bd69-8d02a9c72599"
 
 
 def apply_managed_correlation_headers(

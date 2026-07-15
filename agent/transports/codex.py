@@ -375,7 +375,7 @@ class ResponsesApiTransport(ProviderTransport):
             kwargs["extra_body"] = merged_extra_body
 
         # Managed Responses proxy: normalize include/service_tier/max tokens
-        # and inject Idempotency-Key + x-k-manus-client-request-id when active.
+        # and inject Idempotency-Key + x-dolshoi-client-request-id when active.
         if bool(params.get("single_dispatch_mode")) or bool(
             params.get("managed_proxy")
         ):
