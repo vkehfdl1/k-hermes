@@ -13,6 +13,12 @@ from typing import Any, Dict, Iterable, Optional, Sequence
 from urllib.parse import urlsplit
 
 # Exact managed origin (scheme + host + path including trailing /v1).
+# TEMPORARY domain: today this host serves the legacy CLI proxy, and the final
+# managed origin is an owner Ready-time decision (same-origin cutover vs
+# router.k-manus.app vs configurable). Until then managed turns fail closed at
+# this origin. Keep in lockstep with the desktop pin
+# (k-manus apps/desktop/src-tauri/src/membership/managed_proxy.rs and
+# hermes/event_runner.py) — the two sides reject any mismatch.
 MANAGED_PROXY_ORIGIN = "https://proxy.nomadamas.org/v1"
 
 # Literal UUIDv5 namespace for Idempotency-Key / x-k-manus-client-request-id.
