@@ -73,7 +73,7 @@ def test_open_reveal_authorize_and_no_path(env):
     res = svc.open_media(
         client_action_id=client, session_id=session_id, attachment_id=attachment_id
     )
-    assert res["version"] == "kmanus.hermes.media-action-result.v1"
+    assert res["version"] == "dolshoi.hermes.media-action-result.v1"
     assert res["action"] == "open"
     assert res["attachmentId"] == attachment_id
     assert res["state"] in {"claimed", "completed"}

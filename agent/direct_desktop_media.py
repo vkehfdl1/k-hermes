@@ -255,7 +255,7 @@ class DirectDesktopMediaService:
             raise
 
         return {
-            "version": "kmanus.hermes.runner.v1",
+            "version": "dolshoi.hermes.runner.v1",
             "type": "turn.prepared",
             "acceptanceNonce": acceptance_nonce,
             "clientRequestId": client_request_id,
@@ -374,7 +374,7 @@ class DirectDesktopMediaService:
                 pass
         self.db.abort_desktop_turn(acceptance_nonce)
         return {
-            "version": "kmanus.hermes.runner.v1",
+            "version": "dolshoi.hermes.runner.v1",
             "op": "abort",
             "acceptanceNonce": acceptance_nonce,
             "clientRequestId": row.get("client_request_id"),
@@ -387,7 +387,7 @@ class DirectDesktopMediaService:
         row = self.db.get_desktop_turn_acceptance(acceptance_nonce)
         if row is None:
             return {
-                "version": "kmanus.hermes.runner.v1",
+                "version": "dolshoi.hermes.runner.v1",
                 "op": "status",
                 "acceptanceNonce": acceptance_nonce,
                 "state": "UNKNOWN",
@@ -400,7 +400,7 @@ class DirectDesktopMediaService:
                 state = STATE_COMMITTED
                 row = self.db.get_desktop_turn_acceptance(acceptance_nonce) or row
                 return {
-                    "version": "kmanus.hermes.runner.v1",
+                    "version": "dolshoi.hermes.runner.v1",
                     "op": "status",
                     "acceptanceNonce": acceptance_nonce,
                     "clientRequestId": row.get("client_request_id"),
@@ -413,7 +413,7 @@ class DirectDesktopMediaService:
             except Exception as exc:
                 logger.warning("status resume failed: %s", exc)
         return {
-            "version": "kmanus.hermes.runner.v1",
+            "version": "dolshoi.hermes.runner.v1",
             "op": "status",
             "acceptanceNonce": acceptance_nonce,
             "clientRequestId": row.get("client_request_id"),
@@ -485,7 +485,7 @@ class DirectDesktopMediaService:
             # Keep lease for TTL regardless; GC handles expiry.
             pass
         return {
-            "version": "kmanus.hermes.media-action-result.v1",
+            "version": "dolshoi.hermes.media-action-result.v1",
             "clientActionId": client_action_id,
             "action": "open",
             "attachmentId": attachment_id,
@@ -513,7 +513,7 @@ class DirectDesktopMediaService:
             state = "claimed"
             raise
         return {
-            "version": "kmanus.hermes.media-action-result.v1",
+            "version": "dolshoi.hermes.media-action-result.v1",
             "clientActionId": client_action_id,
             "action": "reveal",
             "attachmentId": attachment_id,
@@ -689,13 +689,13 @@ class DirectDesktopMediaService:
 
         encoded = base64.b64encode(data).decode("ascii")
         return {
-            "version": "kmanus.hermes.preview.v1",
+            "version": "dolshoi.hermes.preview.v1",
             "mimeType": att["mime_type"],
             "byteSize": len(data),
             "encodedBase64": encoded,
         }
 
-    # ── session snapshot (protocol kmanus.hermes.session.v1) ─────────────────
+    # ── session snapshot (protocol dolshoi.hermes.session.v1) ─────────────────
 
     def get_session_snapshot(self, session_id: str, *, fence: bool = True) -> Dict[str, Any]:
         """Durable snapshot after optional fence drain with replayWatermark."""
@@ -745,7 +745,7 @@ class DirectDesktopMediaService:
             row.get("message_id") or "", include_prepared=True
         )
         return {
-            "version": "kmanus.hermes.runner.v1",
+            "version": "dolshoi.hermes.runner.v1",
             "type": "turn.prepared",
             "acceptanceNonce": row["acceptance_nonce"],
             "clientRequestId": row.get("client_request_id"),

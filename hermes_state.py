@@ -7019,7 +7019,7 @@ class SessionDB:
         return self.fence_session(session_id, "drain")
 
     def build_desktop_session_snapshot(self, session_id: str) -> Dict[str, Any]:
-        """Protocol ``kmanus.hermes.session.v1`` snapshot with replayWatermark."""
+        """Protocol ``dolshoi.hermes.session.v1`` snapshot with replayWatermark."""
         watermark = self.max_final_seq(session_id)
         if watermark < 0:
             watermark = 0
@@ -7082,7 +7082,7 @@ class SessionDB:
             )
 
         return {
-            "version": "kmanus.hermes.session.v1",
+            "version": "dolshoi.hermes.session.v1",
             "sessionId": session_id,
             "replayWatermark": watermark,
             "messages": messages,

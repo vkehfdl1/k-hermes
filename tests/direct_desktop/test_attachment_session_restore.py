@@ -71,7 +71,7 @@ def test_prepare_finalize_ordering_and_snapshot(service: DirectDesktopMediaServi
     assert prepared["type"] == "turn.prepared"
     # PREPARED attachments not visible in committed snapshot yet.
     snap0 = service.get_session_snapshot(session_id, fence=False)
-    assert snap0["version"] == "kmanus.hermes.session.v1"
+    assert snap0["version"] == "dolshoi.hermes.session.v1"
     assert snap0["sessionId"] == session_id
     assert "replayWatermark" in snap0
     # Message exists in task tables but attachments empty until COMMITTED.

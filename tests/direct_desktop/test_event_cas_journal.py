@@ -83,7 +83,7 @@ class TestCasIdempotency:
         reply = process_pending_sequence_request(
             db,
             {
-                "version": "kmanus.hermes.runner.v1",
+                "version": "dolshoi.hermes.runner.v1",
                 "type": "pending_sequence_request",
                 "eventKey": KEY_A,
                 "sessionId": SESSION,
@@ -97,7 +97,7 @@ class TestCasIdempotency:
         reply2 = process_pending_sequence_request(
             db,
             {
-                "version": "kmanus.hermes.runner.v1",
+                "version": "dolshoi.hermes.runner.v1",
                 "type": "pending_sequence_request",
                 "eventKey": KEY_A,
                 "sessionId": SESSION,

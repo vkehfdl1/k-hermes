@@ -29,7 +29,7 @@ from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Seque
 
 logger = logging.getLogger(__name__)
 
-RUNNER_VERSION = "kmanus.hermes.runner.v1"
+RUNNER_VERSION = "dolshoi.hermes.runner.v1"
 MEDIA_PROVIDER_UNSUPPORTED = "media_provider_unsupported"
 MEDIA_OUTPUT_CREATED = "media.output.created"
 
@@ -1116,7 +1116,7 @@ def attachment_output_callback(
     display name. ``emit`` defaults to a no-op (tests inject a collector).
     """
     frame = {
-        "version": "kmanus.hermes.runtime-event.v1",
+        "version": "dolshoi.hermes.runtime-event.v1",
         "type": MEDIA_OUTPUT_CREATED,
         "sessionId": record.get("sessionId") or record.get("session_id"),
         "taskId": record.get("taskId") or record.get("task_id"),
@@ -1181,7 +1181,7 @@ def handle_runner_control(
     *,
     fence_phase: str = "acquire",
 ) -> Dict[str, Any]:
-    """Dispatch a single kmanus.hermes.runner.v1 control frame."""
+    """Dispatch a single dolshoi.hermes.runner.v1 control frame."""
     if not isinstance(frame, Mapping):
         raise ValueError("control frame must be an object")
     ftype = frame.get("type") or frame.get("op")
