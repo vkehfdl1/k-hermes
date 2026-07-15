@@ -4718,6 +4718,12 @@ def run_conversation(
                     agent._buffer_vprint(f"⚠️  Invalid JSON in tool call arguments for '{tool_name}': {error_msg}")
 
                     if agent._invalid_json_retries < 3:
+                        _sd_blocked = _block_same_id_recovery(
+                            "grammar_schema_sanitation",
+                            RuntimeError(f"invalid tool-call JSON arguments for '{tool_name}'"),
+                        )
+                        if _sd_blocked is not None:
+                            return _sd_blocked
                         agent._buffer_vprint(f"🔄 Retrying API call ({agent._invalid_json_retries}/3)...")
                         # Don't add anything to messages, just retry the API call
                         continue

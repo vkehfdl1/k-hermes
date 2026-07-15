@@ -159,11 +159,17 @@ def derive_client_request_id(
     *,
     validate: bool = True,
 ) -> str:
-    """UUIDv5 over fixed namespace + encoded nullable fields. Lowercase str."""
+    """UUIDv5 over fixed namespace + encoded nullable fields. Lowercase str.
+
+    Only ``session_id`` and ``task_id`` are validated against the header
+    contract — they travel as raw header values. ``api_request_id`` is never
+    sent as a header (it is only UUIDv5 name material, and it embeds the
+    other two fields so it can legitimately exceed the 128-char header
+    limit); it is hashed as-is.
+    """
     if validate:
         session_id = validate_correlation_field("session_id", session_id)
         task_id = validate_correlation_field("task_id", task_id)
-        api_request_id = validate_correlation_field("api_request_id", api_request_id)
     name = build_client_request_name(session_id, task_id, api_request_id)
     return str(uuid.uuid5(K_MANUS_RESPONSE_NAMESPACE, name))
 
