@@ -101,7 +101,6 @@ class TestBrowserNavigateOpenTimeout:
         monkeypatch.setattr(bt, "_get_open_command_timeout", lambda first_open=False: 120 if first_open else 60)
         monkeypatch.setattr(bt, "_run_browser_command", fake_run)
         monkeypatch.setattr(bt, "_get_session_info", lambda key: {"_first_nav": True, "features": {}})
-        monkeypatch.setattr(bt, "_is_camofox_mode", lambda: False)
         monkeypatch.setattr(bt, "_is_local_backend", lambda: True)
         monkeypatch.setattr(bt, "_is_local_sidecar_key", lambda key: False)
         monkeypatch.setattr(bt, "_navigation_session_key", lambda task_id, url: task_id)

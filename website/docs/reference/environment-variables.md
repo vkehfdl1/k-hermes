@@ -140,10 +140,10 @@ For native Anthropic auth, Hermes prefers Claude Code's own credential files whe
 | `BROWSER_USE_API_KEY` | Browser Use cloud browser API key ([browser-use.com](https://browser-use.com/)) |
 | `FIRECRAWL_BROWSER_TTL` | Firecrawl browser session TTL in seconds (default: 300) |
 | `BROWSER_CDP_URL` | Chrome DevTools Protocol URL for local browser (set via `/browser connect`, e.g. `ws://localhost:9222`) |
-| `CAMOFOX_URL` | Camofox local anti-detection browser URL (default: `http://localhost:9377`) |
-| `CAMOFOX_USER_ID` | Optional externally managed Camofox user ID for shared visible sessions |
-| `CAMOFOX_SESSION_KEY` | Optional Camofox session key used when creating tabs for `CAMOFOX_USER_ID` |
-| `CAMOFOX_ADOPT_EXISTING_TAB` | Set to `true` to reuse an existing Camofox tab before creating a new one |
+| `CLOAKBROWSER_URL` | CloakBrowser local anti-detection browser URL (default: `http://localhost:9377`) |
+| `CLOAKBROWSER_USER_ID` | Optional externally managed CloakBrowser user ID for shared visible sessions |
+| `CLOAKBROWSER_SESSION_KEY` | Optional CloakBrowser session key used when creating tabs for `CLOAKBROWSER_USER_ID` |
+| `CLOAKBROWSER_ADOPT_EXISTING_TAB` | Set to `true` to reuse an existing CloakBrowser tab before creating a new one |
 | `BROWSER_INACTIVITY_TIMEOUT` | Browser session inactivity timeout in seconds |
 | `AGENT_BROWSER_ARGS` | Extra Chromium launch flags (comma- or newline-separated). Hermes auto-injects `--no-sandbox,--disable-dev-shm-usage` when running as root or on AppArmor-restricted unprivileged user namespaces (Ubuntu 23.10+, DGX Spark, many container images); set this manually only to override or add other flags. |
 | `AGENT_BROWSER_ENGINE` | Browser engine for local mode: `auto` (default — Chromium-family via CDP), or a specific engine override. |

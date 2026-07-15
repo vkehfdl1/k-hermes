@@ -21,13 +21,13 @@
 |---|---|---|---|---|
 | 本地 Chrome（`--remote-debugging-port`）/ `/browser connect` | ✓ | ✓ 完整流程 | ✓ | ✓ |
 | Browserbase | ✓（通过 bridge） | ✓ 完整流程（通过 bridge） | ✓ | ✓（`document.title = "Example Domain"` 已在真实跨域 iframe 上验证） |
-| Camofox | ✗ 无 CDP（仅 REST） | ✗ | 通过 DOM 快照部分支持 | ✗ |
+| CloakBrowser | ✗ 无 CDP（仅 REST） | ✗ | 通过 DOM 快照部分支持 | ✗ |
 
 **Browserbase 响应的工作原理。** Browserbase 的 CDP 代理在内部使用 Playwright，并在约 10ms 内自动关闭原生对话框，因此 `Page.handleJavaScriptDialog` 无法跟上。为解决此问题，supervisor 通过 `Page.addScriptToEvaluateOnNewDocument` 注入一个 bridge 脚本，将 `window.alert`/`confirm`/`prompt` 覆盖为向魔法主机（`hermes-dialog-bridge.invalid`）发起的同步 XHR。`Fetch.enable` 在这些 XHR 触达网络之前将其拦截——对话框变成 supervisor 捕获的 `Fetch.requestPaused` 事件，`respond_to_dialog` 通过 `Fetch.fulfillRequest` 以 JSON 响应体完成请求，注入的脚本对其进行解码。
 
 最终效果：从页面角度看，`prompt()` 仍然返回 agent 提供的字符串。从 agent 角度看，无论哪种方式，都是同一套 `browser_dialog(action=...)` API。已针对真实 Browserbase 会话进行端到端测试——4/4（alert/prompt/confirm-accept/confirm-dismiss）全部通过，包括值回传到页面 JS 的验证。
 
-Camofox 在本 PR 中暂不支持；计划在 `jo-inc/camofox-browser` 提交上游 issue，请求添加对话框轮询端点。
+CloakBrowser 在本 PR 中暂不支持；计划在 `jo-inc/cloakbrowser-browser` 提交上游 issue，请求添加对话框轮询端点。
 
 ## 架构
 
@@ -111,7 +111,7 @@ browser_dialog(action, prompt_text=None, dialog_id=None)
 
 ### 可用性门控
 
-两个接口均通过 `_browser_cdp_check` 进行门控（supervisor 只能在 CDP 端点可达时运行）。在 Camofox / 无后端会话中，对话框工具被隐藏，快照省略新字段——不产生 schema 膨胀。
+两个接口均通过 `_browser_cdp_check` 进行门控（supervisor 只能在 CDP 端点可达时运行）。在 CloakBrowser / 无后端会话中，对话框工具被隐藏，快照省略新字段——不产生 schema 膨胀。
 
 ## 跨域 iframe 交互
 
@@ -119,9 +119,9 @@ browser_dialog(action, prompt_text=None, dialog_id=None)
 
 在 Browserbase 上，这是 iframe 交互的**唯一**可靠路径——无状态 CDP 连接（每次 `browser_cdp` 调用时打开）会遭遇签名 URL 过期，而 supervisor 的长连接则保持有效会话。
 
-## Camofox（后续跟进）
+## CloakBrowser（后续跟进）
 
-计划向 `jo-inc/camofox-browser` 提交 issue，添加：
+计划向 `jo-inc/cloakbrowser-browser` 提交 issue，添加：
 - 每个会话的 Playwright `page.on('dialog', handler)`
 - `GET /tabs/:tabId/dialogs` 轮询端点
 - `POST /tabs/:tabId/dialogs/:id` 用于接受/关闭
@@ -149,7 +149,7 @@ browser_dialog(action, prompt_text=None, dialog_id=None)
 
 ## 非目标
 
-- Camofox 的检测/交互（上游缺口；单独跟踪）
+- CloakBrowser 的检测/交互（上游缺口；单独跟踪）
 - 向用户实时流式传输对话框/框架事件（需要 gateway 钩子）
 - 跨会话持久化对话框历史（仅内存）
 - 按 iframe 配置对话框策略（agent 可通过 `dialog_id` 表达）

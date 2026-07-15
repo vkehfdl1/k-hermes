@@ -8092,7 +8092,7 @@ def _update_node_dependencies() -> None:
 
     # Step 1: root install (no workspace recursion).
     # NOTE: capture_output=False here is deliberate (#18840) — optional
-    # postinstall scripts (e.g. @askjo/camofox-browser's browser-binary fetch)
+    # postinstall scripts (e.g. optional browser-binary fetch)
     # print download progress, and capturing it makes a long download look
     # hung. The chatty npm-deprecation noise during `hermes update` comes from
     # the *desktop* build, not this step; that one is captured to update.log.

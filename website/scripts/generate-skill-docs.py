@@ -533,7 +533,7 @@ def build_catalog_md_optional(entries: list[tuple[dict[str, Any], dict[str, Any]
         "",
         "```bash",
         "hermes skills install official/blockchain/solana",
-        "hermes skills install official/mlops/flash-attention",
+        "hermes skills install official/security/1password",
         "```",
         "",
         "Each skill below links to a dedicated page with its full definition, setup, and usage.",

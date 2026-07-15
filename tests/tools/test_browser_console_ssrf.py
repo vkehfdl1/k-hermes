@@ -16,7 +16,6 @@ PRIVATE_URL = "http://127.0.0.1:8080/internal"
 
 @pytest.fixture(autouse=True)
 def _patches(monkeypatch):
-    monkeypatch.setattr(browser_tool, "_is_camofox_mode", lambda: False)
     monkeypatch.setattr(browser_tool, "_last_session_key", lambda key: key)
 
 

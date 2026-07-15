@@ -1586,7 +1586,6 @@ def run_doctor(args):
                 # to eagerly load in every `hermes doctor` invocation.
                 from tools.browser_tool import (
                     _chromium_installed,
-                    _is_camofox_mode,
                     _get_cloud_provider,
                     _get_cdp_override,
                     _using_lightpanda_engine,
@@ -1597,11 +1596,10 @@ def run_doctor(args):
                 pass
             else:
                 # Only warn about Chromium if the installed engine actually
-                # requires it: Camofox, CDP override, a cloud provider, or
+                # requires it: CDP override, a cloud provider, or
                 # Lightpanda all bypass the local Chromium requirement.
                 skip_chromium_check = (
-                    _is_camofox_mode()
-                    or bool(_get_cdp_override())
+                    bool(_get_cdp_override())
                     or _get_cloud_provider() is not None
                     or _using_lightpanda_engine()
                 )

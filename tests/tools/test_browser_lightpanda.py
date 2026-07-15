@@ -108,6 +108,7 @@ class TestShouldInjectEngine:
     def test_lightpanda_injects_in_local_mode(self):
         from tools.browser_tool import _should_inject_engine
         with patch("tools.browser_tool._is_camofox_mode", return_value=False), \
+             patch("tools.browser_tool._cloakbrowser_default_active", return_value=False), \
              patch("tools.browser_tool._get_cdp_override", return_value=""), \
              patch("tools.browser_tool._cloakbrowser_default_active", return_value=False), \
              patch("tools.browser_tool._get_cloud_provider", return_value=None):
@@ -116,14 +117,18 @@ class TestShouldInjectEngine:
     def test_chrome_injects_in_local_mode(self):
         from tools.browser_tool import _should_inject_engine
         with patch("tools.browser_tool._is_camofox_mode", return_value=False), \
+             patch("tools.browser_tool._cloakbrowser_default_active", return_value=False), \
              patch("tools.browser_tool._get_cdp_override", return_value=""), \
              patch("tools.browser_tool._cloakbrowser_default_active", return_value=False), \
              patch("tools.browser_tool._get_cloud_provider", return_value=None):
             assert _should_inject_engine("chrome") is True
 
-    def test_no_inject_in_camofox_mode(self):
+    def test_no_inject_when_cloakbrowser_default_active(self):
         from tools.browser_tool import _should_inject_engine
-        with patch("tools.browser_tool._is_camofox_mode", return_value=True):
+        with patch("tools.browser_tool._is_camofox_mode", return_value=False), \
+             patch("tools.browser_tool._cloakbrowser_default_active", return_value=True), \
+             patch("tools.browser_tool._get_cdp_override", return_value=""), \
+             patch("tools.browser_tool._get_cloud_provider", return_value=None):
             assert _should_inject_engine("lightpanda") is False
 
     def test_no_inject_with_cdp_override(self):

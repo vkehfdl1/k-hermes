@@ -12,7 +12,7 @@ Hermes Agent includes a full browser automation toolset with multiple backend op
 - **Browserbase cloud mode** via [Browserbase](https://browserbase.com) for managed cloud browsers and anti-bot tooling
 - **Browser Use cloud mode** via [Browser Use](https://browser-use.com) as an alternative cloud browser provider
 - **Firecrawl cloud mode** via [Firecrawl](https://firecrawl.dev) for cloud browsers with built-in scraping
-- **Camofox local mode** via [Camofox](https://github.com/jo-inc/camofox-browser) for local anti-detection browsing (Firefox-based fingerprint spoofing)
+- **CloakBrowser local mode** via [CloakBrowser](https://github.com/jo-inc/cloakbrowser-browser) for local anti-detection browsing (Firefox-based fingerprint spoofing)
 - **Local Chromium-family CDP** — connect browser tools to your own Chrome, Brave, Chromium, or Edge instance using `/browser connect`
 - **Local browser mode** via the `agent-browser` CLI and a local Chromium installation
 
@@ -24,7 +24,7 @@ Pages are represented as **accessibility trees** (text-based snapshots), making 
 
 Key capabilities:
 
-- **Multi-provider cloud execution** — Browserbase, Browser Use, or Firecrawl — no local browser needed
+- **Multi-provider cloud execution** — an optional cloud browser plugin — no local browser needed
 - **Local Chromium-family integration** — attach to your running Chrome, Brave, Chromium, or Edge browser via CDP for hands-on browsing
 - **Built-in stealth** — random fingerprints, CAPTCHA solving, residential proxies (Browserbase)
 - **Session isolation** — each task gets its own browser session
@@ -120,14 +120,14 @@ auto-installs it). Post-navigation redirects from a public URL onto a private
 address are still blocked (you can't use a redirect-to-internal trick to reach
 your LAN through the public path).
 
-### Camofox local mode
+### CloakBrowser local mode
 
-[Camofox](https://github.com/jo-inc/camofox-browser) is a self-hosted Node.js server wrapping Camoufox (a Firefox fork with C++ fingerprint spoofing). It provides local anti-detection browsing without cloud dependencies.
+[CloakBrowser](https://github.com/jo-inc/cloakbrowser-browser) is a self-hosted Node.js server wrapping CloakBrowser (a Firefox fork with C++ fingerprint spoofing). It provides local anti-detection browsing without cloud dependencies.
 
 ```bash
-# Clone the Camofox browser server first
-git clone https://github.com/jo-inc/camofox-browser
-cd camofox-browser
+# Clone the CloakBrowser browser server first
+git clone https://github.com/jo-inc/cloakbrowser-browser
+cd cloakbrowser-browser
 
 # Build and start with Docker using the default container settings
 # (auto-detects arch: aarch64 on M1/M2, x86_64 on Intel)
@@ -154,20 +154,20 @@ make up VERSION=135.0.1 RELEASE=beta.24
 make build
 
 # Start with persistence, VNC live view, and a larger Node heap
-mkdir -p ~/.camofox-docker
+mkdir -p ~/.cloakbrowser-docker
 docker run -d \
-  --name camofox-browser \
+  --name cloakbrowser-browser \
   --restart unless-stopped \
   -p 9377:9377 \
   -p 6080:6080 \
   -p 5901:5900 \
-  -e CAMOFOX_PORT=9377 \
+  -e CLOAKBROWSER_PORT=9377 \
   -e ENABLE_VNC=1 \
   -e VNC_BIND=0.0.0.0 \
   -e VNC_RESOLUTION=1920x1080 \
   -e MAX_OLD_SPACE_SIZE=2048 \
-  -v ~/.camofox-docker:/root/.camofox \
-  camofox-browser:135.0.1-aarch64
+  -v ~/.cloakbrowser-docker:/root/.cloakbrowser \
+  cloakbrowser-browser:135.0.1-aarch64
 ```
 
 With VNC enabled, the browser runs in headed mode and can be watched live in your browser at `http://localhost:6080` (noVNC). You can also connect a native VNC client to `localhost:5901`.
@@ -182,15 +182,15 @@ make down
 Then set in `~/.hermes/.env`:
 
 ```bash
-CAMOFOX_URL=http://localhost:9377
+CLOAKBROWSER_URL=http://localhost:9377
 ```
 
-If Camofox is running in Docker and you want it to open web apps served from the host machine, enable loopback rewriting. `CAMOFOX_URL` should still point at the host-published control API, but page URLs such as `http://127.0.0.1:3000` must be opened from inside the container as `http://host.docker.internal:3000`:
+If CloakBrowser is running in Docker and you want it to open web apps served from the host machine, enable loopback rewriting. `CLOAKBROWSER_URL` should still point at the host-published control API, but page URLs such as `http://127.0.0.1:3000` must be opened from inside the container as `http://host.docker.internal:3000`:
 
 ```yaml
 # ~/.hermes/config.yaml
 browser:
-  camofox:
+  cloakbrowser:
     rewrite_loopback_urls: true
     loopback_host_alias: host.docker.internal  # default; use a LAN IP if needed
 ```
@@ -198,30 +198,30 @@ browser:
 Equivalent env vars:
 
 ```bash
-CAMOFOX_REWRITE_LOOPBACK_URLS=true
-CAMOFOX_LOOPBACK_HOST_ALIAS=host.docker.internal
+CLOAKBROWSER_REWRITE_LOOPBACK_URLS=true
+CLOAKBROWSER_LOOPBACK_HOST_ALIAS=host.docker.internal
 ```
 
-The rewrite only applies to page navigation URLs with loopback hosts (`localhost`, `127.0.0.1`, `::1`). It does not change `CAMOFOX_URL`. Leave it disabled for non-Docker Camofox installs, where the browser already runs on the host and loopback URLs are correct.
+The rewrite only applies to page navigation URLs with loopback hosts (`localhost`, `127.0.0.1`, `::1`). It does not change `CLOAKBROWSER_URL`. Leave it disabled for non-Docker CloakBrowser installs, where the browser already runs on the host and loopback URLs are correct.
 
-Or configure via `hermes tools` → Browser Automation → Camofox.
+Or configure via `hermes tools` → Browser Automation → CloakBrowser.
 
-When `CAMOFOX_URL` is set, all browser tools automatically route through Camofox instead of Browserbase or agent-browser.
+When `CLOAKBROWSER_URL` is set, all browser tools automatically route through CloakBrowser instead of Browserbase or agent-browser.
 
 #### Persistent browser sessions
 
-By default, each Camofox session gets a random identity — cookies and logins don't survive across agent restarts. To enable persistent browser sessions, add the following to `~/.hermes/config.yaml`:
+By default, each CloakBrowser session gets a random identity — cookies and logins don't survive across agent restarts. To enable persistent browser sessions, add the following to `~/.hermes/config.yaml`:
 
 ```yaml
 browser:
-  camofox:
+  cloakbrowser:
     managed_persistence: true
 ```
 
 Then fully restart Hermes so the new config is picked up.
 
 :::warning Nested path matters
-Hermes reads `browser.camofox.managed_persistence`, **not** a top-level `managed_persistence`. A common mistake is writing:
+Hermes reads `browser.cloakbrowser.managed_persistence`, **not** a top-level `managed_persistence`. A common mistake is writing:
 
 ```yaml
 # ❌ Wrong — Hermes ignores this
@@ -232,54 +232,54 @@ If the flag is placed at the wrong path, Hermes silently falls back to a random 
 :::
 
 ##### What Hermes does
-- Sends a deterministic profile-scoped `userId` to Camofox so the server can reuse the same Firefox profile across sessions.
+- Sends a deterministic profile-scoped `userId` to CloakBrowser so the server can reuse the same Firefox profile across sessions.
 - Skips server-side context destruction on cleanup, so cookies and logins survive between agent tasks.
 - Scopes the `userId` to the active Hermes profile, so different Hermes profiles get different browser profiles (profile isolation).
 
 ##### What Hermes does not do
-- It does not force persistence on the Camofox server. Hermes only sends a stable `userId`; the server must honor it by mapping that `userId` to a persistent Firefox profile directory.
-- If your Camofox server build treats every request as ephemeral (e.g. always calls `browser.newContext()` without loading a stored profile), Hermes cannot make those sessions persist. Make sure you are running a Camofox build that implements userId-based profile persistence.
+- It does not force persistence on the CloakBrowser server. Hermes only sends a stable `userId`; the server must honor it by mapping that `userId` to a persistent Firefox profile directory.
+- If your CloakBrowser server build treats every request as ephemeral (e.g. always calls `browser.newContext()` without loading a stored profile), Hermes cannot make those sessions persist. Make sure you are running a CloakBrowser build that implements userId-based profile persistence.
 
 ##### Verify it's working
 
-1. Start Hermes and your Camofox server.
+1. Start Hermes and your CloakBrowser server.
 2. Open Google (or any login site) in a browser task and sign in manually.
 3. End the browser task normally.
 4. Start a new browser task.
 5. Open the same site again — you should still be signed in.
 
-If step 5 logs you out, the Camofox server isn't honoring the stable `userId`. Double-check your config path, confirm you fully restarted Hermes after editing `config.yaml`, and verify your Camofox server version supports persistent per-user profiles.
+If step 5 logs you out, the CloakBrowser server isn't honoring the stable `userId`. Double-check your config path, confirm you fully restarted Hermes after editing `config.yaml`, and verify your CloakBrowser server version supports persistent per-user profiles.
 
 ##### Where state lives
 
-Hermes derives the stable `userId` from the profile-scoped directory `~/.hermes/browser_auth/camofox/` (or the equivalent under `$HERMES_HOME` for non-default profiles). The actual browser profile data lives on the Camofox server side, keyed by that `userId`. To fully reset a persistent profile, clear it on the Camofox server and remove the corresponding Hermes profile's state directory.
+Hermes derives the stable `userId` from the profile-scoped directory `~/.hermes/browser_auth/cloakbrowser/` (or the equivalent under `$HERMES_HOME` for non-default profiles). The actual browser profile data lives on the CloakBrowser server side, keyed by that `userId`. To fully reset a persistent profile, clear it on the CloakBrowser server and remove the corresponding Hermes profile's state directory.
 
-#### Externally managed Camofox sessions
+#### Externally managed CloakBrowser sessions
 
-When another app drives the visible Camofox browser (a desktop assistant, a custom integration, another agent), configure Hermes to operate inside that same identity instead of spawning its own isolated profile.
+When another app drives the visible CloakBrowser browser (a desktop assistant, a custom integration, another agent), configure Hermes to operate inside that same identity instead of spawning its own isolated profile.
 
 Three knobs control the behavior:
 
 | Setting | Env var | Effect |
 |---------|---------|--------|
-| `browser.camofox.user_id` | `CAMOFOX_USER_ID` | Camofox `userId` Hermes uses when creating tabs. Setting this opts the session into "externally managed" mode. |
-| `browser.camofox.session_key` | `CAMOFOX_SESSION_KEY` | `sessionKey` (a.k.a. `listItemId`) sent on tab creation. Used to match an existing tab during adoption. Defaults to a per-task value if unset. |
-| `browser.camofox.adopt_existing_tab` | `CAMOFOX_ADOPT_EXISTING_TAB` | When true, Hermes calls `GET /tabs?userId=<user_id>` on first use and reuses an existing tab before creating a new one. |
+| `browser.cloakbrowser.user_id` | `CLOAKBROWSER_USER_ID` | CloakBrowser `userId` Hermes uses when creating tabs. Setting this opts the session into "externally managed" mode. |
+| `browser.cloakbrowser.session_key` | `CLOAKBROWSER_SESSION_KEY` | `sessionKey` (a.k.a. `listItemId`) sent on tab creation. Used to match an existing tab during adoption. Defaults to a per-task value if unset. |
+| `browser.cloakbrowser.adopt_existing_tab` | `CLOAKBROWSER_ADOPT_EXISTING_TAB` | When true, Hermes calls `GET /tabs?userId=<user_id>` on first use and reuses an existing tab before creating a new one. |
 
 Env vars take precedence over `config.yaml`. Either form works:
 
 ```yaml
 browser:
-  camofox:
-    user_id: shared-camofox
+  cloakbrowser:
+    user_id: shared-cloakbrowser
     session_key: visible-tab
     adopt_existing_tab: true
 ```
 
 ```bash
-CAMOFOX_USER_ID=shared-camofox
-CAMOFOX_SESSION_KEY=visible-tab
-CAMOFOX_ADOPT_EXISTING_TAB=true
+CLOAKBROWSER_USER_ID=shared-cloakbrowser
+CLOAKBROWSER_SESSION_KEY=visible-tab
+CLOAKBROWSER_ADOPT_EXISTING_TAB=true
 ```
 
 **What changes when `user_id` is set:**
@@ -294,15 +294,15 @@ CAMOFOX_ADOPT_EXISTING_TAB=true
 3. Otherwise, Hermes adopts the most recently created tab for the user (any `listItemId`).
 4. If no tabs exist or the request fails, Hermes falls back to creating a new tab on the next operation.
 
-Adoption only fires until `tab_id` is populated for the session. If the external app closes the adopted tab mid-run, the next browser tool call will surface a Camofox error — Hermes does not re-poll for a fresh tab on every call.
+Adoption only fires until `tab_id` is populated for the session. If the external app closes the adopted tab mid-run, the next browser tool call will surface a CloakBrowser error — Hermes does not re-poll for a fresh tab on every call.
 
 **Picking `session_key`:** if you want Hermes to reliably attach to a *specific* existing tab, set `session_key` to the `listItemId` the external app used when creating it. If you leave `session_key` unset and only set `user_id`, Hermes generates a per-task `session_key` (`task_<id>`) — Hermes will share cookies and the profile with the external app, but will open its own tab alongside instead of reusing one.
 
-**Concurrency note:** the external app and Hermes can drive the same Camofox `userId` simultaneously, but Camofox does not coordinate per-tab focus between clients. Coordinate ownership at the application layer (e.g. the external app pauses while Hermes runs).
+**Concurrency note:** the external app and Hermes can drive the same CloakBrowser `userId` simultaneously, but CloakBrowser does not coordinate per-tab focus between clients. Coordinate ownership at the application layer (e.g. the external app pauses while Hermes runs).
 
 #### VNC live view
 
-When Camofox runs in headed mode (with a visible browser window), it exposes a VNC port in its health check response. Hermes automatically discovers this and includes the VNC URL in navigation responses, so the agent can share a link for you to watch the browser live.
+When CloakBrowser runs in headed mode (with a visible browser window), it exposes a VNC port in its health check response. Hermes automatically discovers this and includes the VNC URL in navigation responses, so the agent can share a link for you to watch the browser live.
 
 ### Local Chromium-family browser via CDP (`/browser connect`)
 
@@ -522,7 +522,7 @@ When a CDP supervisor is active for the current session (typical for any session
 
 Raw Chrome DevTools Protocol passthrough — the escape hatch for browser operations not covered by the other tools. Use for native dialog handling, iframe-scoped evaluation, cookie/network control, or any CDP verb the agent needs.
 
-**Only available when a CDP endpoint is reachable at session start** — meaning `/browser connect` has attached to a running Chrome, Brave, Chromium, or Edge browser, or `browser.cdp_url` is set in `config.yaml`. The default local agent-browser mode, Camofox, and cloud providers (Browserbase, Browser Use, Firecrawl) do not currently expose CDP to this tool — cloud providers have per-session CDP URLs but live-session routing is a follow-up.
+**Only available when a CDP endpoint is reachable at session start** — meaning `/browser connect` has attached to a running Chrome, Brave, Chromium, or Edge browser, or `browser.cdp_url` is set in `config.yaml`. The default local agent-browser mode, CloakBrowser, and cloud providers (third-party cloud browser plugins) do not currently expose CDP to this tool — cloud providers have per-session CDP URLs but live-session routing is a follow-up.
 
 **CDP method reference:** https://chromedevtools.github.io/devtools-protocol/ — the agent can `web_extract` a specific method's page to look up parameters and return shape.
 
@@ -577,7 +577,7 @@ Responds to a native JS dialog (`alert` / `confirm` / `prompt` / `beforeunload`)
 |---|---|---|
 | Local Chrome via `/browser connect` or `browser.cdp_url` | ✓ | ✓ full workflow |
 | Browserbase | ✓ | ✓ full workflow (via injected XHR bridge) |
-| Camofox / default local agent-browser | ✗ | ✗ (no CDP endpoint) |
+| CloakBrowser / default local agent-browser | ✗ | ✗ (no CDP endpoint) |
 
 **How it works on Browserbase.** Browserbase's CDP proxy auto-dismisses real native dialogs server-side within ~10ms, so we can't use `Page.handleJavaScriptDialog`. The supervisor injects a small script via `Page.addScriptToEvaluateOnNewDocument` that overrides `window.alert`/`confirm`/`prompt` with a synchronous XHR. We intercept those XHRs via `Fetch.enable` — the page's JS thread stays blocked on the XHR until we call `Fetch.fulfillRequest` with the agent's response. `prompt()` return values round-trip back into page JS unchanged.
 

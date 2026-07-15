@@ -238,33 +238,33 @@ describe('ToolsetConfigPanel', () => {
     getToolsetConfig.mockResolvedValue(
       config({
         name: 'browser',
-        active_provider: 'Camofox',
+        active_provider: 'Local Browser',
         providers: [
           {
-            name: 'Camofox',
+            name: 'Local Browser',
             badge: 'local',
             tag: 'Stealth local browser',
             env_vars: [],
-            post_setup: 'camofox',
+            post_setup: 'agent_browser',
             requires_nous_auth: false,
             is_active: true
           }
         ]
       })
     )
-    runToolsetPostSetup.mockResolvedValue({ ok: true, pid: 4321, name: 'tools-post-setup', key: 'camofox' })
+    runToolsetPostSetup.mockResolvedValue({ ok: true, pid: 4321, name: 'tools-post-setup', key: 'agent_browser' })
     // First poll: still running; second poll: finished cleanly.
     getActionStatus
       .mockResolvedValueOnce({
         exit_code: null,
-        lines: ['Installing Camofox browser server...'],
+        lines: ['Installing local browser...'],
         name: 'tools-post-setup',
         pid: 4321,
         running: true
       })
       .mockResolvedValue({
         exit_code: 0,
-        lines: ['Installing Camofox browser server...', "Post-setup 'camofox' complete"],
+        lines: ['Installing local browser...', "Post-setup 'agent_browser' complete"],
         name: 'tools-post-setup',
         pid: 4321,
         running: false
@@ -275,7 +275,7 @@ describe('ToolsetConfigPanel', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: /Run setup/ }))
 
-    await waitFor(() => expect(runToolsetPostSetup).toHaveBeenCalledWith('browser', 'camofox'))
+    await waitFor(() => expect(runToolsetPostSetup).toHaveBeenCalledWith('browser', 'agent_browser'))
     // The install log is tailed inline. The first poll fires after a 1200ms
     // delay (mirrors command-center's poll cadence), so allow >1200ms here.
     await waitFor(() => expect(getActionStatus).toHaveBeenCalledWith('tools-post-setup', 300), {
@@ -287,14 +287,14 @@ describe('ToolsetConfigPanel', () => {
     getToolsetConfig.mockResolvedValue(
       config({
         name: 'browser',
-        active_provider: 'Camofox',
+        active_provider: 'Local Browser',
         providers: [
           {
-            name: 'Camofox',
+            name: 'Local Browser',
             badge: 'local',
             tag: 'Stealth local browser',
             env_vars: [],
-            post_setup: 'camofox',
+            post_setup: 'agent_browser',
             requires_nous_auth: false,
             is_active: true
           }
@@ -309,7 +309,7 @@ describe('ToolsetConfigPanel', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: /Run setup/ }))
 
-    await waitFor(() => expect(runToolsetPostSetup).toHaveBeenCalledWith('browser', 'camofox'))
+    await waitFor(() => expect(runToolsetPostSetup).toHaveBeenCalledWith('browser', 'agent_browser'))
     // Give the would-be first poll delay (1200ms) time to NOT fire.
     await new Promise(resolve => setTimeout(resolve, 1500))
     expect(getActionStatus).not.toHaveBeenCalled()
@@ -319,21 +319,21 @@ describe('ToolsetConfigPanel', () => {
     getToolsetConfig.mockResolvedValue(
       config({
         name: 'browser',
-        active_provider: 'Camofox',
+        active_provider: 'Local Browser',
         providers: [
           {
-            name: 'Camofox',
+            name: 'Local Browser',
             badge: 'local',
             tag: 'Stealth local browser',
             env_vars: [],
-            post_setup: 'camofox',
+            post_setup: 'agent_browser',
             requires_nous_auth: false,
             is_active: true
           }
         ]
       })
     )
-    runToolsetPostSetup.mockResolvedValue({ ok: true, pid: 4321, name: 'tools-post-setup', key: 'camofox' })
+    runToolsetPostSetup.mockResolvedValue({ ok: true, pid: 4321, name: 'tools-post-setup', key: 'agent_browser' })
     // Action finished but failed (non-zero exit).
     getActionStatus.mockResolvedValue({
       exit_code: 1,

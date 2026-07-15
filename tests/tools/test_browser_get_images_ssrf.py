@@ -22,7 +22,6 @@ IMAGES_JS_RESULT = json.dumps([
 
 @pytest.fixture(autouse=True)
 def _patches(monkeypatch):
-    monkeypatch.setattr(browser_tool, "_is_camofox_mode", lambda: False)
     monkeypatch.setattr(browser_tool, "_last_session_key", lambda key: key)
 
 

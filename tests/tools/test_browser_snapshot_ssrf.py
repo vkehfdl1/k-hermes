@@ -44,7 +44,6 @@ class TestBrowserSnapshotPrivateNetworkGuard:
     @pytest.fixture(autouse=True)
     def _setup(self, monkeypatch):
         """Common patches for snapshot SSRF tests."""
-        monkeypatch.setattr(browser_tool, "_is_camofox_mode", lambda: False)
         monkeypatch.setattr(
             browser_tool,
             "_get_session_info",
@@ -293,7 +292,6 @@ class TestBrowserVisionPrivateNetworkGuard:
     @pytest.fixture(autouse=True)
     def _setup(self, monkeypatch):
         """Common patches for vision SSRF tests."""
-        monkeypatch.setattr(browser_tool, "_is_camofox_mode", lambda: False)
 
     def test_blocks_private_url_after_eval_navigation(self, monkeypatch):
         """Vision must block when current page URL is private."""

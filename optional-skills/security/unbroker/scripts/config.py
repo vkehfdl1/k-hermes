@@ -41,7 +41,7 @@ VALID = {
     #   programmatic - CLI sends via SMTP + reads verify links via IMAP (needs EMAIL_* creds)
     #   alias        - AgentMail agent-owned inboxes / per-broker aliases
     "email_mode": {"draft_only", "browser", "programmatic", "alias"},
-    "browser_backend": {"auto", "browserbase", "agent-browser", "camofox"},
+    "browser_backend": {"auto", "browserbase", "agent-browser", },
     "tracker_backend": {"local-json", "google-sheets"},
     "encryption": {"none", "age"},
 }

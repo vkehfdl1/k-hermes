@@ -12,16 +12,8 @@ Active selection
 The active provider is chosen by configuration with this precedence:
 
 1. ``browser.cloud_provider`` in ``config.yaml`` (explicit override).
-2. Legacy preference order — ``browser-use`` → ``browserbase`` — filtered by
-   availability. Matches the historic auto-detect order in
-   :func:`tools.browser_tool._get_cloud_provider` (Browser Use checked first
-   because it covers both the managed Nous gateway and direct API key path;
-   Browserbase as the older direct-credentials fallback). ``firecrawl`` is
-   intentionally NOT in the legacy walk — users only get Firecrawl as a
-   cloud browser when they explicitly set ``browser.cloud_provider:
-   firecrawl``, matching pre-migration behaviour where Firecrawl was never
-   auto-selected.
-3. Otherwise ``None`` — the dispatcher falls back to local browser mode.
+2. Otherwise ``None`` — k-hermes ships no bundled cloud browser providers;
+   the dispatcher uses local CloakBrowser / CDP override.
 
 The explicit-config branch (rule 1) intentionally ignores ``is_available()``
 so the dispatcher surfaces a typed "X_API_KEY is not set" error to the user
@@ -99,15 +91,8 @@ def get_provider(name: str) -> Optional[BrowserProvider]:
 # ---------------------------------------------------------------------------
 
 
-# Legacy auto-detect order — used when no ``browser.cloud_provider`` is set.
-# Matches the pre-migration walk in :func:`tools.browser_tool._get_cloud_provider`.
-# Firecrawl is intentionally absent so users with ``FIRECRAWL_API_KEY`` set
-# for web-extract don't get silently routed to a paid cloud browser. See
-# :func:`_resolve` for the full rationale.
-_LEGACY_PREFERENCE = (
-    "browser-use",
-    "browserbase",
-)
+# No bundled cloud browser auto-detect in k-hermes.
+_LEGACY_PREFERENCE = ()
 
 
 def _resolve(configured: Optional[str]) -> Optional[BrowserProvider]:
@@ -124,13 +109,13 @@ def _resolve(configured: Optional[str]) -> Optional[BrowserProvider]:
        precise "X_API_KEY is not set" error instead of silently routing
        somewhere else.
     3. **Legacy preference walk, filtered by availability.** Walk
-       :data:`_LEGACY_PREFERENCE` (``browser-use`` → ``browserbase``) looking
+       :data:`_LEGACY_PREFERENCE` (``browserbase``) looking
        for a provider whose ``is_available()`` is True.
 
     There is intentionally NO "single-eligible shortcut" rule here (unlike
     :func:`agent.web_search_registry._resolve`). Pre-migration, the
     auto-detect branch in ``tools.browser_tool._get_cloud_provider`` only
-    considered Browser Use and Browserbase; Firecrawl was reachable only
+    considered Browserbase after Browser Use removal; Firecrawl was reachable only
     via an explicit ``browser.cloud_provider: firecrawl`` config key.
     Preserving that gate matters because Firecrawl shares its API key with
     the *web* extract plugin (``plugins/web/firecrawl/``), so users who set

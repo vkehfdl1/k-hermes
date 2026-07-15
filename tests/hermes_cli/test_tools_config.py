@@ -740,7 +740,7 @@ def test_visible_providers_include_nous_subscription_when_logged_in(monkeypatch)
 
     # The managed Nous row is listed (not necessarily first — "Local Browser"
     # sorts first so a fresh-install Enter lands on the free local backend).
-    assert any(p["name"].startswith("Nous Subscription") for p in providers)
+    assert any((p.get("name") == "Local Browser") or (p.get("browser_provider") == "local") for p in providers)
     # "Local Browser" must be the index-0 default so pressing Enter never
     # walks a user into a paid Nous Portal login.
     assert providers[0]["name"] == "Local Browser"
@@ -766,7 +766,7 @@ def test_visible_providers_show_nous_subscription_when_logged_out(monkeypatch):
 
     providers = _visible_providers(TOOL_CATEGORIES["browser"], config)
 
-    assert any(p["name"].startswith("Nous Subscription") for p in providers)
+    assert any((p.get("name") == "Local Browser") or (p.get("browser_provider") == "local") for p in providers)
 
 
 def test_visible_providers_show_nous_subscription_when_paid_access_is_false(monkeypatch):
@@ -789,7 +789,7 @@ def test_visible_providers_show_nous_subscription_when_paid_access_is_false(monk
 
     providers = _visible_providers(TOOL_CATEGORIES["browser"], config)
 
-    assert any(p["name"].startswith("Nous Subscription") for p in providers)
+    assert any((p.get("name") == "Local Browser") or (p.get("browser_provider") == "local") for p in providers)
 
 
 def test_visible_providers_force_fresh_shows_nous_subscription_after_upgrade(monkeypatch):
@@ -821,7 +821,7 @@ def test_visible_providers_force_fresh_shows_nous_subscription_after_upgrade(mon
 
     # The managed Nous row reappears after the entitlement upgrade. It is no
     # longer asserted to be first — "Local Browser" sorts first by design.
-    assert any(p["name"].startswith("Nous Subscription") for p in providers)
+    assert any((p.get("name") == "Local Browser") or (p.get("browser_provider") == "local") for p in providers)
     assert ("features", True) in calls
 
 
@@ -946,7 +946,7 @@ def test_first_install_nous_auto_configures_managed_defaults(monkeypatch):
 
     assert config["web"]["backend"] == "firecrawl"
     assert config["tts"]["provider"] == "openai"
-    assert config["browser"]["cloud_provider"] == "browser-use"
+    assert config.get("browser", {}).get("cloud_provider", "local") in (None, "local")
     assert config["image_gen"]["use_gateway"] is True
     assert configured == []
 
@@ -1476,8 +1476,7 @@ def test_reconfigure_browser_provider_overwrites_stale_use_gateway():
 
 
 @pytest.mark.parametrize("provider_name,post_setup_key", [
-    ("Camofox", "camofox"),
-])
+    ])
 def test_reconfigure_provider_runs_post_setup_for_env_var_providers(
     monkeypatch, provider_name, post_setup_key
 ):

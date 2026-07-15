@@ -1778,12 +1778,12 @@ browser:
   cdp_url: ""
   # Dialog supervisor — controls how native JS dialogs (alert / confirm / prompt)
   # are handled when a CDP backend is attached (Browserbase, local Chromium-family
-  # browser via /browser connect). Ignored on Camofox and default local agent-browser mode.
+  # browser via /browser connect). Ignored on CloakBrowser and default local agent-browser mode.
   dialog_policy: must_respond    # must_respond | auto_dismiss | auto_accept
   dialog_timeout_s: 300          # Safety auto-dismiss under must_respond (seconds)
-  camofox:
-    managed_persistence: false   # When true, Camofox sessions persist cookies/logins across restarts
-    user_id: ""                  # Optional externally managed Camofox userId
+  cloakbrowser:
+    managed_persistence: false   # When true, CloakBrowser sessions persist cookies/logins across restarts
+    user_id: ""                  # Optional externally managed CloakBrowser userId
     session_key: ""              # Optional session key sent when Hermes creates a tab
     adopt_existing_tab: false    # Reuse an existing tab for this identity before creating one
 ```

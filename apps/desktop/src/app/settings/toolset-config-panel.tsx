@@ -179,7 +179,7 @@ function EnvVarField({ envVar, isSet, onSaved, onCleared }: EnvVarFieldProps) {
 
 interface PostSetupRunnerProps {
   toolset: string
-  /** The provider's post_setup hook key (e.g. "camofox", "ddgs"). */
+  /** The provider's post_setup hook key (e.g. "agent_browser", "ddgs"). */
   postSetupKey: string
   /** Refresh the parent config after the install finishes (a backend may now
    *  report itself configured). */

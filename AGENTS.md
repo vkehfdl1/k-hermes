@@ -855,7 +855,7 @@ companion repo, not in this tree.
 Two parallel surfaces:
 
 - **`skills/`** — built-in skills shipped and loadable by default.
-  Organized by category directories (e.g. `skills/github/`, `skills/mlops/`).
+  Organized by category directories (e.g. `skills/github/`, `skills/software-development/`).
 - **`optional-skills/`** — heavier or niche skills shipped with the repo but
   NOT active by default. Installed explicitly via
   `hermes skills install official/<category>/<skill>`. Adapter lives in

@@ -132,10 +132,10 @@ description: "Hermes Agent 使用的所有环境变量完整参考"
 | `BROWSER_USE_API_KEY` | Browser Use 云浏览器 API 密钥（[browser-use.com](https://browser-use.com/)） |
 | `FIRECRAWL_BROWSER_TTL` | Firecrawl 浏览器会话 TTL（秒，默认：300） |
 | `BROWSER_CDP_URL` | 本地浏览器的 Chrome DevTools Protocol（CDP）URL（通过 `/browser connect` 设置，例如 `ws://localhost:9222`） |
-| `CAMOFOX_URL` | Camofox 本地反检测浏览器 URL（默认：`http://localhost:9377`） |
-| `CAMOFOX_USER_ID` | 可选的外部管理 Camofox 用户 ID，用于共享可见会话 |
-| `CAMOFOX_SESSION_KEY` | 为 `CAMOFOX_USER_ID` 创建标签页时使用的可选 Camofox 会话密钥 |
-| `CAMOFOX_ADOPT_EXISTING_TAB` | 设为 `true` 可在创建新标签页前复用现有 Camofox 标签页 |
+| `CLOAKBROWSER_URL` | CloakBrowser 本地反检测浏览器 URL（默认：`http://localhost:9377`） |
+| `CLOAKBROWSER_USER_ID` | 可选的外部管理 CloakBrowser 用户 ID，用于共享可见会话 |
+| `CLOAKBROWSER_SESSION_KEY` | 为 `CLOAKBROWSER_USER_ID` 创建标签页时使用的可选 CloakBrowser 会话密钥 |
+| `CLOAKBROWSER_ADOPT_EXISTING_TAB` | 设为 `true` 可在创建新标签页前复用现有 CloakBrowser 标签页 |
 | `BROWSER_INACTIVITY_TIMEOUT` | 浏览器会话不活动超时（秒） |
 | `AGENT_BROWSER_ARGS` | 额外的 Chromium 启动标志（逗号或换行分隔）。以 root 身份运行或在 AppArmor 限制的非特权用户命名空间（Ubuntu 23.10+、DGX Spark、许多容器镜像）中运行时，Hermes 自动注入 `--no-sandbox,--disable-dev-shm-usage`；仅在需要覆盖或添加其他标志时手动设置。 |
 | `FAL_KEY` | 图像生成（[fal.ai](https://fal.ai/)） |

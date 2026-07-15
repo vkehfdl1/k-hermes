@@ -290,7 +290,7 @@ class TestCmdUpdateBranchFallback:
         #
         # The root install omits `--silent` and runs without
         # `capture_output` so optional postinstall scripts (e.g.
-        # `@askjo/camofox-browser`'s browser-binary fetch) print progress —
+        # optional browser-binary fetch) print progress —
         # otherwise long downloads look like a hang (#18840).
         root_flags = [
             "/usr/bin/npm",

@@ -1482,12 +1482,12 @@ browser:
   cdp_url: ""
   # 对话框监督器 —— 控制当 CDP 后端附加时（Browserbase、本地 Chromium 系
   # 浏览器通过 /browser connect）如何处理原生 JS 对话框（alert/confirm/prompt）。
-  # 在 Camofox 和默认本地 agent 浏览器模式下忽略。
+  # 在 CloakBrowser 和默认本地 agent 浏览器模式下忽略。
   dialog_policy: must_respond    # must_respond | auto_dismiss | auto_accept
   dialog_timeout_s: 300          # must_respond 下的安全自动关闭（秒）
-  camofox:
-    managed_persistence: false   # 为 true 时，Camofox 会话跨重启持久化 cookie/登录
-    user_id: ""                  # 可选的外部管理 Camofox userId
+  cloakbrowser:
+    managed_persistence: false   # 为 true 时，CloakBrowser 会话跨重启持久化 cookie/登录
+    user_id: ""                  # 可选的外部管理 CloakBrowser userId
     session_key: ""              # Hermes 创建标签页时发送的可选会话密钥
     adopt_existing_tab: false    # 在创建新标签页之前重用此身份的现有标签页
 ```

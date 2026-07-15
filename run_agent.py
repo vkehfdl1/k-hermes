@@ -1883,6 +1883,21 @@ class AIAgent:
             # allocated next turn at a recycled address.
             self._flushed_db_message_ids = set()
             self._last_flushed_db_idx = len(messages)
+            # Direct-desktop media plane: after durable message flush, emit any
+            # pending output attachment intents (media.output.created). Safe
+            # no-op when the flag/queue is absent.
+            if getattr(self, "_direct_desktop_media_no_strip", False) or getattr(
+                self, "_pending_direct_desktop_outputs", None
+            ):
+                try:
+                    from agent.direct_desktop_runner import flush_pending_attach_intents
+
+                    flush_pending_attach_intents(self)
+                except Exception as _dd_flush_exc:  # pragma: no cover - defensive
+                    logger.debug(
+                        "direct-desktop attach-intent flush skipped: %s",
+                        _dd_flush_exc,
+                    )
         except Exception as e:
             logger.warning("Session DB append_message failed: %s", e)
 

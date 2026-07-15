@@ -42,7 +42,7 @@ BROWSER_DIALOG_SCHEMA: Dict[str, Any] = {
         "**Availability:** only present when a CDP-capable backend is "
         "attached — Browserbase sessions, local Chromium-family browser via "
         "``/browser connect``, or ``browser.cdp_url`` in config.yaml. "
-        "Not available on Camofox (REST-only) or the default Playwright "
+        "Not available on legacy REST backends (REST-only) or the default Playwright "
         "local browser (CDP port is hidden)."
     ),
     "parameters": {
@@ -94,7 +94,7 @@ def browser_dialog(
                 "success": False,
                 "error": (
                     "No CDP supervisor is attached to this task. Either the "
-                    "browser backend doesn't expose CDP (Camofox, default "
+                    "browser backend doesn't expose CDP (legacy REST backends, default "
                     "Playwright) or no browser session has been started yet. "
                     "Call browser_navigate or /browser connect first."
                 ),

@@ -446,50 +446,23 @@ TOOL_CATEGORIES = {
     "browser": {
         "name": "Browser Automation",
         "icon": "🌐",
-        # Per-provider rows for Browserbase, Browser Use, and Firecrawl are
+        # Per-provider rows for Browserbase and Firecrawl are
         # injected at runtime from plugins.browser.<vendor>.provider via
         # _plugin_browser_providers() in _visible_providers(). Only
         # non-provider UX setup-flow rows remain here. "Local Browser" is
         # listed FIRST so it is the default-highlighted (index 0) choice on a
         # fresh install — pressing Enter must land on the free, no-key local
-        # backend, never on the paid Nous Subscription gateway row:
-        #   - "Local Browser" — non-cloud option, no CloudBrowserProvider.
-        #   - "Nous Subscription (Browser Use cloud)" — managed Browser Use
-        #     billed via Nous subscription (requires_nous_auth +
-        #     override_env_vars). Uses the browser-use plugin as the
-        #     underlying backend but has a distinct setup UX.
-        #   - "Camofox" — anti-detection local Firefox; short-circuits the
-        #     cloud-provider dispatch path via _is_camofox_mode().
+        # backend:
+        #   - "Local Browser" — CloakBrowser/local Chromium, no CloudBrowserProvider.
+        # Browser Use and local browser were removed from k-hermes.
         "providers": [
             {
                 "name": "Local Browser",
                 "badge": "★ recommended · free",
-                "tag": "Headless Chromium, no API key needed",
+                "tag": "CloakBrowser / local Chromium, no API key needed",
                 "env_vars": [],
                 "browser_provider": "local",
                 "post_setup": "agent_browser",
-            },
-            {
-                "name": "Nous Subscription (Browser Use cloud)",
-                "badge": "subscription",
-                "tag": "Managed Browser Use billed to your subscription",
-                "env_vars": [],
-                "browser_provider": "browser-use",
-                "requires_nous_auth": True,
-                "managed_nous_feature": "browser",
-                "override_env_vars": ["BROWSER_USE_API_KEY"],
-                "post_setup": "agent_browser",
-            },
-            {
-                "name": "Camofox",
-                "badge": "free · local",
-                "tag": "Anti-detection browser (Firefox/Camoufox)",
-                "env_vars": [
-                    {"key": "CAMOFOX_URL", "prompt": "Camofox server URL", "default": "http://localhost:9377",
-                     "url": "https://github.com/jo-inc/camofox-browser"},
-                ],
-                "browser_provider": "camofox",
-                "post_setup": "camofox",
             },
         ],
     },
@@ -1142,7 +1115,7 @@ def _run_cua_driver_installer(label: str = "Installing", verbose: bool = True) -
 def _run_post_setup(post_setup_key: str):
     """Run post-setup hooks for tools that need extra installation steps."""
     import shutil
-    if post_setup_key in {"agent_browser", "browserbase"}:
+    if post_setup_key in {"agent_browser"}:
         node_modules = PROJECT_ROOT / "node_modules" / "agent-browser"
         npm_bin = shutil.which("npm")
         npx_bin = shutil.which("npx")
@@ -1173,7 +1146,7 @@ def _run_post_setup(post_setup_key: str):
             return
 
         # Step 2: only the local browser provider actually needs Chromium on
-        # disk. Cloud providers (Browserbase, Browser Use, Firecrawl) host
+        # disk. Optional third-party cloud browser plugins host
         # their own Chromium and don't need the local install.
         if post_setup_key != "agent_browser":
             return
@@ -1254,31 +1227,6 @@ def _run_post_setup(post_setup_key: str):
         except Exception as exc:
             _print_warning(f"    Chromium install failed: {exc}")
             _print_info("    Run manually: npx agent-browser install --with-deps")
-
-    elif post_setup_key == "camofox":
-        camofox_dir = PROJECT_ROOT / "node_modules" / "@askjo" / "camofox-browser"
-        _npm_bin = shutil.which("npm")
-        if not camofox_dir.exists() and _npm_bin:
-            _print_info("    Installing Camofox browser server...")
-            import subprocess
-            # Absolute npm path so .cmd shim executes on Windows.
-            result = subprocess.run(
-                # --workspaces=false avoids resolving apps/desktop. See #38772.
-                [_npm_bin, "install", "--silent", "--workspaces=false"],
-                capture_output=True, text=True, cwd=str(PROJECT_ROOT)
-            )
-            if result.returncode == 0:
-                _print_success("    Camofox installed")
-            else:
-                _print_warning("    npm install failed - run manually: npm install --workspaces=false")
-        if camofox_dir.exists():
-            _print_info("    Start the Camofox server:")
-            _print_info("      npx @askjo/camofox-browser")
-            _print_info("    First run downloads the Camoufox engine (~300MB)")
-            _print_info("    Or use Docker: docker run -p 9377:9377 -e CAMOFOX_PORT=9377 jo-inc/camofox-browser")
-        elif not shutil.which("npm"):
-            _print_warning("    Node.js not found. Install Camofox via Docker:")
-            _print_info("      docker run -p 9377:9377 -e CAMOFOX_PORT=9377 jo-inc/camofox-browser")
 
     elif post_setup_key == "cua_driver":
         install_cua_driver(upgrade=False)
@@ -1517,7 +1465,7 @@ def run_post_setup_command(args) -> int:
     """``hermes tools post-setup <key>`` — non-interactive post-setup runner.
 
     Runs the install/bootstrap hook a provider declares (npm install for
-    browser/Camofox, pip install for kittentts/piper/ddgs, cua-driver fetch,
+    browser, pip install for kittentts/piper/ddgs, cua-driver fetch,
     etc.). This is the stable, scriptable target the dashboard spawns so the
     GUI can drive backend setup without re-implementing the install logic.
     Returns a process exit code (0 ok, 2 unknown key).
@@ -2330,13 +2278,14 @@ def _plugin_web_search_providers() -> list[dict]:
     return rows
 
 
-# Mirror of _plugin_web_search_providers for cloud browser backends. After
-# PR #25214, Browserbase / Browser Use / Firecrawl live as plugins under
+# Mirror of _plugin_web_search_providers for optional cloud browser backends.
+# Bundled Browserbase / Firecrawl browser plugins were removed from k-hermes;
+# third-party plugins may still live under
 # plugins/browser/<vendor>/; this helper is the sole source of provider rows
 # for those three in the "Browser Automation" picker. The hardcoded
 # ``TOOL_CATEGORIES["browser"]`` entries that drove the category before
 # were deleted in the same PR; only non-provider UX setup-flow rows remain
-# ("Nous Subscription", "Local Browser", "Camofox") — see the comment block
+# ("Nous Subscription", "Local Browser", "local browser") — see the comment block
 # in ``TOOL_CATEGORIES["browser"]`` for why each one stays hardcoded.
 def _plugin_browser_providers() -> list[dict]:
     """Build picker-row dicts from plugin-registered cloud browser providers.
@@ -2508,11 +2457,8 @@ def _visible_providers(
     if cat.get("name") == "Web Search & Extract":
         visible.extend(_plugin_web_search_providers())
 
-    # Inject plugin-registered cloud browser backends. After PR #25214,
-    # Browserbase / Browser Use / Firecrawl are the plugin-supplied rows;
-    # the hardcoded "Nous Subscription" / "Local Browser" / "Camofox" rows
-    # stay because they're non-provider UX setup flows (subscription auth,
-    # local fallback, and the REST-API anti-detection backend respectively).
+    # Inject any third-party cloud browser backends still registered.
+    # The hardcoded "Local Browser" row stays as the non-cloud UX setup flow.
     if cat.get("name") == "Browser Automation":
         visible.extend(_plugin_browser_providers())
 

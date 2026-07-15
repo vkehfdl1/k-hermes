@@ -5,8 +5,8 @@ Browser Tool Module
 
 This module provides browser automation tools using agent-browser CLI.  By
 default it connects agent-browser to local CloakBrowser CDP.  Explicit CDP
-overrides still win, while legacy cloud/local Chromium providers remain
-available behind their helper APIs.
+overrides (``/browser connect`` / ``BROWSER_CDP_URL`` / ``browser.cdp_url``)
+still win and attach to a user-supplied Chromium DevTools endpoint.
 
 The tool uses agent-browser's accessibility tree (ariaSnapshot) for text-based
 page representation, making it ideal for LLM agents without vision capabilities.
@@ -14,7 +14,7 @@ page representation, making it ideal for LLM agents without vision capabilities.
 Features:
 - **CloakBrowser CDP mode** (default): local stealth Chromium via cloakserve.
 - **Explicit CDP mode**: connect directly when BROWSER_CDP_URL/browser.cdp_url is set.
-- **Legacy provider helpers**: Browserbase, Browser Use, Firecrawl, and local Chromium code paths retained for compatibility.
+- **No bundled cloud browser providers** in k-hermes (Browserbase / Firecrawl browser / Browser Use removed).
 - Session isolation per task ID
 - Text-based page snapshots using accessibility tree
 - Element interaction via ref selectors (@e1, @e2, etc.)
@@ -22,16 +22,7 @@ Features:
 - Automatic cleanup of browser sessions
 
 Environment Variables:
-- BROWSERBASE_API_KEY: API key for direct Browserbase cloud mode
-- BROWSERBASE_PROJECT_ID: Project ID for direct Browserbase cloud mode
-- BROWSER_USE_API_KEY: API key for direct Browser Use cloud mode
-- BROWSERBASE_PROXIES: Enable/disable residential proxies (default: "true")
-- BROWSERBASE_ADVANCED_STEALTH: Enable advanced stealth mode with custom Chromium,
-  requires Scale Plan (default: "false")
-- BROWSERBASE_KEEP_ALIVE: Enable keepAlive for session reconnection after disconnects,
-  requires paid plan (default: "true")
-- BROWSERBASE_SESSION_TIMEOUT: Custom session timeout in seconds (max 21600 = 6h).
-  Set to extend beyond project default. Common values: 600 (10min), 1800 (30min) (default: none)
+
 - CLOAKBROWSER_ROOT: Optional path to sibling CloakBrowser checkout containing bin/cloakserve
 - CLOAKBROWSER_PORT: Optional local cloakserve port (default: 9222)
 
@@ -78,14 +69,7 @@ from tools import cloakbrowser_runtime
 # means a compromised transitive dependency could read every Hermes secret
 # straight out of process.env.  Strip by default, then re-add only the
 # browser-backend keys the worker legitimately needs.
-_BROWSER_PASSTHROUGH_KEYS: tuple[str, ...] = (
-    "BROWSERBASE_API_KEY",
-    "BROWSERBASE_PROJECT_ID",
-    "BROWSER_USE_API_KEY",
-    "FIRECRAWL_API_KEY",
-    "FIRECRAWL_API_URL",
-    "FIRECRAWL_BROWSER_TTL",
-)
+_BROWSER_PASSTHROUGH_KEYS: tuple[str, ...] = ()
 
 
 def _build_browser_env() -> dict:
@@ -95,7 +79,7 @@ def _build_browser_env() -> dict:
     infra secrets) then re-adds only the browser-backend keys the worker needs.
     The ``hermes_subprocess_env`` import is deferred to keep ``browser_tool``
     importable under test harnesses that load it against a stubbed ``tools``
-    package (tests/tools/test_managed_browserbase_and_modal.py).
+    package (tests that stub the tools package).
     """
     from tools.environments.local import hermes_subprocess_env
 
@@ -122,34 +106,21 @@ except Exception:
     _is_always_blocked_url = lambda url: True  # noqa: E731 — fail-closed on the floor too
     _normalize_url_for_request = lambda url: url  # noqa: E731 — best-effort fallback
     _sensitive_query_param_name = lambda url: None  # noqa: E731 — best-effort fallback
-# Browser-provider ABC + registry — PR #25214 moved the per-vendor providers
-# (Browserbase / Browser Use / Firecrawl) out of ``tools/browser_providers/``
-# and into ``plugins/browser/<vendor>/``. The dispatcher consults the
-# registry; the legacy class names are re-exported below as backward-compat
-# shims for callers that import them from this module.
+# Browser-provider ABC + registry remain so third-party plugins under
+# ``~/.hermes/plugins/browser/`` can still register. Bundled Browserbase /
+# Firecrawl browser / Browser Use providers were removed in k-hermes.
 from agent.browser_provider import BrowserProvider as CloudBrowserProvider  # noqa: F401  (legacy alias)
 from agent.browser_registry import (  # noqa: F401  (test-patchable surface)
     get_provider as _registry_get_browser_provider,
 )
-from plugins.browser.browserbase.provider import (  # noqa: F401  (legacy import surface)
-    BrowserbaseBrowserProvider as BrowserbaseProvider,
-)
-from plugins.browser.browser_use.provider import (  # noqa: F401
-    BrowserUseBrowserProvider as BrowserUseProvider,
-)
-from plugins.browser.firecrawl.provider import (  # noqa: F401
-    FirecrawlBrowserProvider as FirecrawlProvider,
-)
 from tools.tool_backend_helpers import normalize_browser_cloud_provider
-# Camofox local anti-detection browser backend (optional).
-# When CAMOFOX_URL is set, all browser operations route through the
-# camofox REST API instead of the agent-browser CLI.
-try:
-    from tools.browser_camofox import is_camofox_mode as _is_camofox_mode
-except ImportError:
-    _is_camofox_mode = lambda: False  # noqa: E731
-
 logger = logging.getLogger(__name__)
+
+
+def _is_camofox_mode() -> bool:
+    """Camofox was removed from k-hermes; always False (test patch point only)."""
+    return False
+
 
 # Standard PATH entries for environments with minimal PATH (e.g. systemd services).
 # Includes Android/Termux and macOS Homebrew locations needed for agent-browser,
@@ -460,9 +431,8 @@ def _get_cdp_override() -> str:
     1. ``BROWSER_CDP_URL`` env var (live override from ``/browser connect``)
     2. ``browser.cdp_url`` in config.yaml (persistent config)
 
-    When either is set, we skip both Browserbase and the local headless
-    launcher and connect directly to the supplied Chrome DevTools Protocol
-    endpoint.
+    When either is set, we skip CloakBrowser auto-launch and connect directly
+    to the supplied Chrome DevTools Protocol endpoint.
     """
     env_override = os.environ.get("BROWSER_CDP_URL", "").strip()
     if env_override:
@@ -533,8 +503,7 @@ def _ensure_cdp_supervisor(task_id: str) -> None:
     Resolves the CDP URL in this order:
       1. ``BROWSER_CDP_URL`` / ``browser.cdp_url`` — covers ``/browser connect``
          and config-set overrides.
-      2. ``_active_sessions[task_id]["cdp_url"]`` — covers Browserbase + any
-         other cloud provider whose ``create_session`` returns a raw CDP URL.
+      2. ``_active_sessions[task_id]["cdp_url"]`` — covers any cloud provider whose ``create_session`` returns a raw CDP URL.
 
     Swallows all errors — failing to attach the supervisor must not break
     the browser session itself.  The agent simply won't see
@@ -583,24 +552,11 @@ def _stop_cdp_supervisor(task_id: str) -> None:
 # Cloud Provider Registry
 # ============================================================================
 #
-# Per-vendor browser providers (Browserbase / Browser Use / Firecrawl) live as
-# plugins under ``plugins/browser/<vendor>/`` and self-register through
-# :mod:`agent.browser_registry` at plugin-discovery time. The legacy
-# class-name registry below is preserved as a backward-compat shim so test
-# fixtures that ``monkeypatch.setattr(browser_tool, "_PROVIDER_REGISTRY", ...)``
-# keep working — but ``_get_cloud_provider()`` now consults
-# :mod:`agent.browser_registry` for the actual lookup.
-#
-# When the test patches ``_PROVIDER_REGISTRY``, we honour it (so the cache
-# unit tests still drive the function); otherwise the registry-backed path
-# wins. This keeps the test surface stable while letting third-party
-# plugins drop in under ``~/.hermes/plugins/browser/<vendor>/``.
+# Bundled cloud browser providers are removed. The registry dict remains as a
+# test patch point; live resolution uses agent.browser_registry (empty unless
+# a third-party plugin registers).
 
-_PROVIDER_REGISTRY: Dict[str, type] = {
-    "browserbase": BrowserbaseProvider,
-    "browser-use": BrowserUseProvider,
-    "firecrawl": FirecrawlProvider,
-}
+_PROVIDER_REGISTRY: Dict[str, type] = {}
 # Frozen copy of the import-time _PROVIDER_REGISTRY, used by
 # ``_is_legacy_provider_registry_overridden`` to detect test-time
 # monkeypatching. NEVER mutate this dict.
@@ -663,109 +619,16 @@ def _ensure_browser_plugins_loaded() -> None:
 
 
 def _get_cloud_provider() -> Optional[CloudBrowserProvider]:
-    """Return the configured cloud browser provider, or None for local mode.
+    """Return a configured cloud browser provider, or None for local mode.
 
-    Reads ``config["browser"]["cloud_provider"]`` once and caches the result
-    for the process lifetime. An explicit ``local`` provider disables cloud
-    fallback. If unset, fall back to Browser Use (managed Nous gateway or
-    direct API key) and then Browserbase (direct credentials only) — the
-    historic auto-detect order, now expressed as the
-    :data:`agent.browser_registry._LEGACY_PREFERENCE` walk.
-
-    Selection routes through :mod:`agent.browser_registry` so third-party
-    browser plugins (``~/.hermes/plugins/browser/<vendor>/``) participate
-    in explicit-config resolution. Test fixtures that override
-    ``_PROVIDER_REGISTRY`` or ``BrowserUseProvider`` / ``BrowserbaseProvider``
-    on this module still drive the function — see
-    ``_is_legacy_provider_registry_overridden``.
+    k-hermes ships no bundled cloud browser backends. Resolution still consults
+    ``browser.cloud_provider`` and :mod:`agent.browser_registry` so optional
+    third-party plugins under ``~/.hermes/plugins/browser/`` can register.
+    Without a registered plugin, this always returns None (CloakBrowser/CDP).
     """
     global _cached_cloud_provider, _cloud_provider_resolved
     if _cloud_provider_resolved:
         return _cached_cloud_provider
-
-    resolved: Optional[CloudBrowserProvider] = None
-    try:
-        from hermes_cli.config import read_raw_config
-        cfg = read_raw_config()
-        browser_cfg = cfg.get("browser", {})
-        provider_key = None
-        if isinstance(browser_cfg, dict) and "cloud_provider" in browser_cfg:
-            provider_key = normalize_browser_cloud_provider(
-                browser_cfg.get("cloud_provider")
-            )
-            if provider_key == "local":
-                _cached_cloud_provider = None
-                _cloud_provider_resolved = True
-                return None
-        if provider_key:
-            try:
-                if _is_legacy_provider_registry_overridden():
-                    # Test fixture path: honour the patched dict so the
-                    # cache-policy unit tests keep working.
-                    factory = _PROVIDER_REGISTRY.get(provider_key)
-                    if factory is not None:
-                        resolved = factory()
-                else:
-                    # Ensure plugins are discovered so the registry is
-                    # populated. Idempotent — cheap on subsequent calls.
-                    _ensure_browser_plugins_loaded()
-                    resolved = _registry_get_browser_provider(provider_key)
-                    if resolved is None:
-                        # Explicit config name unknown to the registry —
-                        # might be a typo, an uninstalled plugin, or a
-                        # registry-population failure. Warn the user
-                        # (legacy code would have surfaced a typed
-                        # credentials error via direct class instantiation;
-                        # post-migration we surface this WARNING instead).
-                        logger.warning(
-                            "browser.cloud_provider=%r is not a registered "
-                            "browser plugin; falling back to auto-detect "
-                            "(install the corresponding plugin or fix the "
-                            "config key spelling).",
-                            provider_key,
-                        )
-            except Exception:
-                logger.warning(
-                    "Failed to instantiate explicit cloud_provider %r; will retry on next call",
-                    provider_key,
-                    exc_info=True,
-                )
-                return None
-    except Exception as e:
-        # Config file may be temporarily unreadable; still try auto-detect so
-        # env-based / managed-gateway credentials can resolve. Don't pin cache.
-        logger.debug("Could not read cloud_provider from config: %s", e)
-
-    if resolved is None:
-        # Auto-detect path: Browser Use first (managed Nous gateway or
-        # direct API key), then Browserbase (direct credentials). Uses
-        # the legacy class names imported at the top of this module so
-        # tests that ``monkeypatch.setattr(browser_tool, "BrowserUseProvider", ...)``
-        # keep driving this branch deterministically. Third-party browser
-        # plugins are intentionally NOT reachable from auto-detect — they
-        # participate only via explicit ``browser.cloud_provider: <name>``,
-        # mirroring the firecrawl gate documented on
-        # :data:`agent.browser_registry._LEGACY_PREFERENCE`.
-        try:
-            fallback_provider = BrowserUseProvider()
-            if fallback_provider.is_configured():
-                resolved = fallback_provider
-            else:
-                fallback_provider = BrowserbaseProvider()
-                if fallback_provider.is_configured():
-                    resolved = fallback_provider
-        except Exception:  # pragma: no cover - defensive: never poison cache
-            logger.debug("Cloud provider auto-detect failed", exc_info=True)
-            return None
-
-    if resolved is None:
-        # Transient None — credentials may self-heal. Don't poison the cache.
-        return None
-
-    _cached_cloud_provider = resolved
-    _cloud_provider_resolved = True
-    return _cached_cloud_provider
-
 
 from hermes_constants import is_termux as _is_termux_environment
 
@@ -799,9 +662,7 @@ def _is_local_mode() -> bool:
 def _is_local_backend() -> bool:
     """Return True when the browser runs locally AND the terminal is also local.
 
-    SSRF protection is only meaningful for cloud backends (Browserbase,
-    BrowserUse) where the agent could reach internal resources on a remote
-    machine.  For local backends — CloakBrowser, Camofox, or the built-in
+    SSRF protection is only meaningful for cloud backends (Browserbase) where the agent could reach internal resources on a remote
     headless Chromium without a cloud provider — the user already has full
     terminal and network access on the same machine, so the check adds no
     security value.
@@ -816,17 +677,14 @@ def _is_local_backend() -> bool:
     # off-host). Don't treat it as a trusted local backend — otherwise a
     # model-driven navigate could reach internal/metadata services reachable
     # from the CDP host but not the terminal. This MUST be checked before the
-    # camofox short-circuit below so a Camofox backend combined with a CDP
-    # override still fails the local check instead of returning local and
+ # short-circuit below so a     # override still fails the local check instead of returning local and
     # skipping the private/internal SSRF gate. The override is honored from
     # either the BROWSER_CDP_URL env var or a persistent `browser.cdp_url`
-    # config (both via _get_cdp_override(), and both now suppress camofox in
-    # browser_camofox.py). _is_local_mode() already treats any CDP override as
+ # config (both via _get_cdp_override(), and both now suppress in
+ # browser_ _is_local_mode() already treats any CDP override as
     # non-local; keep the two helpers in agreement.
     if _get_cdp_override():
         return False
-    if _is_camofox_mode():
-        return True
     if _get_cloud_provider() is not None:
         return False
     # When terminal runs in a container, browser on host can access
@@ -890,14 +748,21 @@ def _get_browser_engine() -> str:
 def _should_inject_engine(engine: str) -> bool:
     """Return True when the engine flag should be added to agent-browser commands.
 
-    Only inject ``--engine`` for non-cloud, non-camofox local sessions where
-    the engine is explicitly set (not ``auto``).
+    Only inject ``--engine`` for non-cloud, non-CDP sessions where the engine is
+    explicitly set (not ``auto``). CloakBrowser default sessions attach via CDP
+    and do not need agent-browser ``--engine``.
     """
     if engine == "auto":
         return False
-    if _is_camofox_mode():
+    if _get_cdp_override():
         return False
-    return _is_local_mode()
+    if _get_cloud_provider() is not None:
+        return False
+    # Legacy agent-browser local engine path (Lightpanda/Chrome) when CloakBrowser
+    # default is disabled for the process (tests / explicit local tooling).
+    if _cloakbrowser_default_active():
+        return False
+    return True
 
 
 def _using_lightpanda_engine() -> bool:
@@ -1273,7 +1138,6 @@ def _navigation_session_key(task_id: str, url: str) -> str:
          default True).
       3. The URL resolves to a private/LAN/loopback address.
       4. A CDP override is not active (that path owns the whole session).
-      5. Camofox mode is not active (Camofox is already local-only).
       6. CloakBrowser default mode is not active (it owns all URLs).
 
     When all are true, returns ``f"{task_id}::local"`` so the hybrid-routing
@@ -1285,8 +1149,6 @@ def _navigation_session_key(task_id: str, url: str) -> str:
     if _get_cdp_override():
         return task_id
     if _cloakbrowser_default_active():
-        return task_id
-    if _is_camofox_mode():
         return task_id
     if _get_cloud_provider() is None:
         return task_id
@@ -1670,7 +1532,7 @@ def _reap_orphaned_browser_sessions():
     socket_dirs = glob.glob(pattern)
     # Also pick up CDP sessions
     socket_dirs += glob.glob(os.path.join(tmpdir, "agent-browser-cdp_*"))
-    # Also pick up cloud-provider sessions (browser-use/browserbase/firecrawl)
+    # Also pick up cloud-provider sessions (cloud-provider)
     socket_dirs += glob.glob(os.path.join(tmpdir, "agent-browser-hermes_*"))
 
     if not socket_dirs:
@@ -2327,7 +2189,7 @@ def _run_browser_command(
     # hybrid private-URL routing can create a local sidecar while a cloud
     # provider remains configured for public URLs.
     engine = _engine_override or _get_browser_engine()
-    if engine != "auto" and not _is_camofox_mode() and not session_info.get("cdp_url"):
+    if engine != "auto" and not session_info.get("cdp_url"):
         backend_args += ["--engine", engine]
 
     # Keep concrete executable paths intact, even when they contain spaces.
@@ -2706,7 +2568,7 @@ def browser_navigate(url: str, task_id: Optional[str] = None) -> str:
         })
 
     # SSRF protection — block private/internal addresses before navigating.
-    # Skipped for local backends (Camofox, headless Chromium without a cloud
+ # Skipped for local backends (, headless Chromium without a cloud
     # provider) because the agent already has full local network access via
     # the terminal tool.  Also skipped when hybrid routing will auto-spawn a
     # local Chromium sidecar for this URL (cloud provider configured +
@@ -2763,11 +2625,6 @@ def browser_navigate(url: str, task_id: Optional[str] = None) -> str:
             "error": blocked["message"],
             "blocked_by_policy": {"host": blocked["host"], "rule": blocked["rule"], "source": blocked["source"]},
         })
-
-    # Camofox backend — delegate after safety checks pass
-    if _is_camofox_mode() and not _cloakbrowser_default_active():
-        from tools.browser_camofox import camofox_navigate
-        return camofox_navigate(url, task_id)
 
     if auto_local_this_nav:
         logger.info(
@@ -2914,10 +2771,6 @@ def browser_snapshot(
     Returns:
         JSON string with page snapshot
     """
-    if _is_camofox_mode():
-        from tools.browser_camofox import camofox_snapshot
-        return camofox_snapshot(full, task_id, user_task)
-
     effective_task_id = _last_session_key(task_id or "default")
 
     # Build command args based on full flag
@@ -3009,10 +2862,6 @@ def browser_click(ref: str, task_id: Optional[str] = None) -> str:
     Returns:
         JSON string with click result
     """
-    if _is_camofox_mode():
-        from tools.browser_camofox import camofox_click
-        return camofox_click(ref, task_id)
-
     effective_task_id = _last_session_key(task_id or "default")
     blocked = _blocked_private_page_action(effective_task_id, "click")
     if blocked is not None:
@@ -3050,10 +2899,6 @@ def browser_type(ref: str, text: str, task_id: Optional[str] = None) -> str:
     Returns:
         JSON string with type result
     """
-    if _is_camofox_mode():
-        from tools.browser_camofox import camofox_type
-        return camofox_type(ref, text, task_id)
-
     effective_task_id = _last_session_key(task_id or "default")
     blocked = _blocked_private_page_action(effective_task_id, "type")
     if blocked is not None:
@@ -3119,15 +2964,6 @@ def browser_scroll(direction: str, task_id: Optional[str] = None) -> str:
     # ~500px is roughly half a viewport of travel.
     _SCROLL_PIXELS = 500
 
-    if _is_camofox_mode():
-        from tools.browser_camofox import camofox_scroll
-        # Camofox REST API doesn't support pixel args; use repeated calls
-        _SCROLL_REPEATS = 5
-        result = ""
-        for _ in range(_SCROLL_REPEATS):
-            result = camofox_scroll(direction, task_id)
-        return result
-
     effective_task_id = _last_session_key(task_id or "default")
 
     result = _run_browser_command(effective_task_id, "scroll", [direction, str(_SCROLL_PIXELS)])
@@ -3155,10 +2991,6 @@ def browser_back(task_id: Optional[str] = None) -> str:
     Returns:
         JSON string with navigation result
     """
-    if _is_camofox_mode():
-        from tools.browser_camofox import camofox_back
-        return camofox_back(task_id)
-
     effective_task_id = _last_session_key(task_id or "default")
     result = _run_browser_command(effective_task_id, "back", [])
 
@@ -3207,10 +3039,6 @@ def browser_press(key: str, task_id: Optional[str] = None) -> str:
     Returns:
         JSON string with key press result
     """
-    if _is_camofox_mode():
-        from tools.browser_camofox import camofox_press
-        return camofox_press(key, task_id)
-
     effective_task_id = _last_session_key(task_id or "default")
     blocked = _blocked_private_page_action(effective_task_id, "press")
     if blocked is not None:
@@ -3271,10 +3099,6 @@ def browser_console(clear: bool = False, expression: Optional[str] = None, task_
         return _browser_eval(expression, task_id)
 
     # --- Console output mode (original behaviour) ---
-    if _is_camofox_mode():
-        from tools.browser_camofox import camofox_console
-        return camofox_console(clear, task_id)
-
     effective_task_id = _last_session_key(task_id or "default")
 
     if _eval_ssrf_guard_active(effective_task_id):
@@ -3532,12 +3356,7 @@ def _browser_eval(expression: str, task_id: Optional[str] = None) -> str:
                 ),
             }, ensure_ascii=False)
 
-    # Camofox keeps its own raw-``task_id``-keyed session map, so pass the raw
-    # id (matching every other Camofox tool) rather than the resolved
     # agent-browser session key.  The literal pre-scan above already ran.
-    if _is_camofox_mode():
-        return _camofox_eval(expression, task_id)
-
     # ── Private-network guard (eval return-value path) ──────────────────────
     # The literal pre-scan above closes the direct-fetch sub-path
     # (`fetch('http://127.0.0.1/secret')`).  The post-eval page-URL recheck
@@ -3671,80 +3490,6 @@ def _browser_eval(expression: str, task_id: Optional[str] = None) -> str:
     return json.dumps(_copy_fallback_warning(response, result), ensure_ascii=False, default=str)
 
 
-def _camofox_current_page_private_url(tab_id: str, user_id: str) -> Optional[str]:
-    """Return the Camofox page URL when it targets a private/internal address.
-
-    Camofox analogue of ``_current_page_private_url`` (evaluate endpoint instead
-    of the agent-browser CLI).  Returns ``None`` when the page is public, the URL
-    can't be determined, or the probe errors (fail-open on probe failure,
-    matching the snapshot/vision guards — do not change to fail-closed without
-    also changing the sibling).
-    """
-    try:
-        from tools.browser_camofox import _post
-
-        data = _post(
-            f"/tabs/{tab_id}/evaluate",
-            body={"expression": "window.location.href", "userId": user_id},
-        )
-        current_url = str(data.get("result") if isinstance(data, dict) else data or "")
-        current_url = current_url.strip().strip('"').strip("'")
-        if current_url and (_is_always_blocked_url(current_url) or not _is_safe_url(current_url)):
-            return current_url
-    except Exception as exc:
-        logger.debug("_camofox_current_page_private_url: probe failed (%s)", exc)
-    return None
-
-
-def _camofox_eval(expression: str, task_id: Optional[str] = None) -> str:
-    """Evaluate JS via Camofox's /tabs/{tab_id}/evaluate endpoint (if available)."""
-    from tools.browser_camofox import _ensure_tab, _post
-    try:
-        tab_info = _ensure_tab(task_id or "default")
-        tab_id = str(tab_info.get("tab_id") or tab_info.get("id") or "")
-        if not tab_id:
-            raise RuntimeError("Camofox tab is missing an id")
-        user_id = str(tab_info["user_id"])
-        resp = _post(f"/tabs/{tab_id}/evaluate", body={"expression": expression, "userId": user_id})
-
-        # Camofox returns the result in a JSON envelope
-        raw_result = resp.get("result") if isinstance(resp, dict) else resp
-        parsed = raw_result
-        if isinstance(raw_result, str):
-            try:
-                parsed = json.loads(raw_result)
-            except (json.JSONDecodeError, ValueError):
-                pass
-
-        if _eval_ssrf_guard_active(task_id or "default"):
-            _blocked_url = _camofox_current_page_private_url(tab_id, user_id)
-            if _blocked_url:
-                return json.dumps({
-                    "success": False,
-                    "error": (
-                        "Blocked: page URL targets a private or internal address "
-                        f"({_blocked_url}). This may have been caused by a "
-                        "JavaScript navigation via browser_console."
-                    ),
-                }, ensure_ascii=False)
-
-        return json.dumps({
-            "success": True,
-            "result": _redact_browser_output(parsed),
-            "result_type": type(parsed).__name__,
-        }, ensure_ascii=False, default=str)
-    except Exception as e:
-        error_msg = str(e)
-        # Graceful degradation — server may not support eval
-        if any(code in error_msg for code in ("404", "405", "501")):
-            return json.dumps({
-                "success": False,
-                "error": "JavaScript evaluation is not supported by this Camofox server. "
-                         "Use browser_snapshot or browser_vision to inspect page state.",
-            })
-        return tool_error(error_msg, success=False)
-
-
 def _maybe_start_recording(task_id: str):
     """Start recording if browser.record_sessions is enabled in config."""
     with _cleanup_lock:
@@ -3804,10 +3549,6 @@ def browser_get_images(task_id: Optional[str] = None) -> str:
     Returns:
         JSON string with list of images (src and alt)
     """
-    if _is_camofox_mode():
-        from tools.browser_camofox import camofox_get_images
-        return camofox_get_images(task_id)
-
     effective_task_id = _last_session_key(task_id or "default")
 
     # Use eval to run JavaScript that extracts images
@@ -3891,10 +3632,6 @@ def browser_vision(question: str, annotate: bool = False, task_id: Optional[str]
         A JSON string with vision analysis results and screenshot_path, or a
         multimodal tool-result envelope carrying the screenshot and metadata.
     """
-    if _is_camofox_mode():
-        from tools.browser_camofox import camofox_vision
-        return camofox_vision(question, annotate, task_id)
-
     import base64
     import uuid as uuid_mod
     from hermes_constants import get_hermes_dir
@@ -4225,7 +3962,7 @@ def cleanup_browser(task_id: Optional[str] = None) -> None:
     Clean up browser session(s) for a task.
 
     Called automatically when a task completes or when inactivity timeout is reached.
-    Closes both the agent-browser/Browserbase session and Camofox sessions.
+    Closes the agent-browser/CDP session.
 
     When ``task_id`` is a bare task identifier (no ``::local`` suffix), reaps
     BOTH the cloud/primary session AND any hybrid-routing local sidecar that
@@ -4272,18 +4009,9 @@ def _cleanup_single_browser_session(task_id: str) -> None:
     # before the backend tears down the underlying CDP endpoint.
     _stop_cdp_supervisor(task_id)
 
-    # Also clean up Camofox session if running in Camofox mode.
     # Skip full close when managed persistence is enabled — the browser
     # profile (and its session cookies) must survive across agent tasks.
     # The inactivity reaper still frees idle resources.
-    if _is_camofox_mode():
-        try:
-            from tools.browser_camofox import camofox_close, camofox_soft_cleanup
-            if not camofox_soft_cleanup(task_id):
-                camofox_close(task_id)
-        except Exception as e:
-            logger.debug("Camofox cleanup for task %s: %s", task_id, e)
-
     logger.debug("cleanup_browser called for task_id: %s", task_id)
     logger.debug("Active sessions: %s", list(_active_sessions.keys()))
 
@@ -4576,17 +4304,14 @@ def check_browser_requirements() -> bool:
     engine and for fallback/screenshot paths, but not for Lightpanda-only text
     navigation/snapshot workflows.
 
-    In **cloud mode** (Browserbase, Browser Use, or Firecrawl): the CLI
+    In **cloud mode** (third-party browser plugin): the CLI
     and the provider's required credentials must be present. The cloud
     provider hosts its own Chromium, so no local browser binary is needed.
 
     Returns:
         True if all requirements are met, False otherwise
     """
-    # Camofox backend — only needs the server URL, no agent-browser CLI
-    if _is_camofox_mode():
-        return True
-
+ # , no agent-browser CLI
     # CDP override mode can connect to an existing remote/local browser endpoint
     # without requiring the local agent-browser binary on PATH.
     if _get_cdp_override():

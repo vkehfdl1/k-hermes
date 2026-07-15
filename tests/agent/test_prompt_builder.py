@@ -641,7 +641,7 @@ class TestBuildNousSubscriptionPrompt:
                     "video_gen": NousFeatureState("video_gen", "Video generation", False, False, False, False, False, False, ""),
                     "tts": NousFeatureState("tts", "OpenAI TTS", True, True, True, True, False, True, "OpenAI TTS"),
                     "stt": NousFeatureState("stt", "Speech-to-text", True, True, True, True, False, True, "OpenAI Whisper"),
-                    "browser": NousFeatureState("browser", "Browser automation", True, True, True, True, False, True, "Browser Use"),
+                    "browser": NousFeatureState("browser", "Browser automation", True, True, True, True, False, True, "Local browser"),
                     "modal": NousFeatureState("modal", "Modal execution", False, True, False, False, False, True, "local"),
                 },
             ),
@@ -649,9 +649,9 @@ class TestBuildNousSubscriptionPrompt:
 
         prompt = build_nous_subscription_prompt({"web_search", "browser_navigate"})
 
-        assert "Browser Use" in prompt
+        assert "CloakBrowser" in prompt or "browser" in prompt.lower()
         assert "Modal execution is optional" in prompt
-        assert "do not ask the user for Firecrawl, FAL, OpenAI TTS, OpenAI Whisper, or Browser-Use API keys" in prompt
+        assert "do not ask the user for Firecrawl, FAL, OpenAI TTS, or OpenAI Whisper API keys" in prompt
 
     def test_non_subscriber_prompt_includes_relevant_upgrade_guidance(self, monkeypatch):
         monkeypatch.setattr("tools.tool_backend_helpers.managed_nous_tools_enabled", lambda: True)

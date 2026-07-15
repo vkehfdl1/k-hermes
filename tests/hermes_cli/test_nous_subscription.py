@@ -99,7 +99,7 @@ def test_get_nous_subscription_features_prefers_managed_modal_in_auto_mode(monke
     assert features.modal.direct_override is False
 
 
-def test_get_nous_subscription_features_marks_browser_use_as_managed_when_gateway_ready(monkeypatch):
+def test_get_nous_subscription_features_does_not_select_removed_browser_use(monkeypatch):
     monkeypatch.setattr(ns, "get_env_value", lambda name: "")
     monkeypatch.setattr(
         ns, "get_nous_portal_account_info", lambda: _account(logged_in=True, paid=True)
@@ -118,45 +118,36 @@ def test_get_nous_subscription_features_marks_browser_use_as_managed_when_gatewa
         {"browser": {"cloud_provider": "browser-use"}}
     )
 
-    assert features.browser.available is True
-    assert features.browser.active is True
-    assert features.browser.managed_by_nous is True
-    assert features.browser.direct_override is False
-    assert features.browser.current_provider == "Browser Use"
+    # Explicit browser-use is retained as the configured name but marked
+    # unavailable after the provider was removed from k-hermes.
+    assert features.browser.available is False
+    assert features.browser.active is False
+    assert features.browser.managed_by_nous is False
+    assert features.browser.current_provider == "browser-use"
 
 
-def test_get_nous_subscription_features_uses_direct_browserbase_when_no_managed_gateway(monkeypatch):
-    """When direct Browserbase keys are set and no managed gateway is available,
-    the unconfigured fallback should pick Browserbase as a direct provider."""
+def test_get_nous_subscription_features_ignores_browserbase_env_after_removal(monkeypatch):
     env = {
         "BROWSERBASE_API_KEY": "bb-key",
         "BROWSERBASE_PROJECT_ID": "bb-project",
     }
-
     monkeypatch.setattr(ns, "get_env_value", lambda name: env.get(name, ""))
     monkeypatch.setattr(
         ns, "get_nous_portal_account_info", lambda: _account(logged_in=True, paid=True)
     )
     monkeypatch.setattr(ns, "_toolset_enabled", lambda config, key: key == "browser")
     monkeypatch.setattr(ns, "_has_agent_browser", lambda: True)
+    monkeypatch.setattr(ns, "_local_browser_runnable", lambda: True)
     monkeypatch.setattr(ns, "resolve_openai_audio_api_key", lambda: "")
     monkeypatch.setattr(ns, "has_direct_modal_credentials", lambda: False)
-    monkeypatch.setattr(
-        ns,
-        "is_managed_tool_gateway_ready",
-        lambda vendor: False,  # No managed gateway available
-    )
+    monkeypatch.setattr(ns, "is_managed_tool_gateway_ready", lambda vendor: False)
 
     features = ns.get_nous_subscription_features({})
-
-    assert features.browser.available is True
-    assert features.browser.active is True
+    assert features.browser.current_provider != "Browserbase"
     assert features.browser.managed_by_nous is False
-    assert features.browser.direct_override is True
-    assert features.browser.current_provider == "Browserbase"
 
 
-def test_get_nous_subscription_features_prefers_camofox_over_managed_browser_use(monkeypatch):
+def test_get_nous_subscription_features_ignores_removed_camofox_env(monkeypatch):
     env = {"CAMOFOX_URL": "http://localhost:9377"}
 
     monkeypatch.setattr(ns, "get_env_value", lambda name: env.get(name, ""))
@@ -164,50 +155,18 @@ def test_get_nous_subscription_features_prefers_camofox_over_managed_browser_use
         ns, "get_nous_portal_account_info", lambda: _account(logged_in=True, paid=True)
     )
     monkeypatch.setattr(ns, "_toolset_enabled", lambda config, key: key == "browser")
-    monkeypatch.setattr(ns, "_has_agent_browser", lambda: False)
-    monkeypatch.setattr(ns, "resolve_openai_audio_api_key", lambda: "")
-    monkeypatch.setattr(ns, "has_direct_modal_credentials", lambda: False)
-    monkeypatch.setattr(
-        ns,
-        "is_managed_tool_gateway_ready",
-        lambda vendor: vendor == "browser-use",
-    )
-
-    features = ns.get_nous_subscription_features(
-        {"browser": {"cloud_provider": "browser-use"}}
-    )
-
-    assert features.browser.available is True
-    assert features.browser.active is True
-    assert features.browser.managed_by_nous is False
-    assert features.browser.direct_override is True
-    assert features.browser.current_provider == "Camofox"
-
-
-def test_get_nous_subscription_features_requires_agent_browser_for_browserbase(monkeypatch):
-    env = {
-        "BROWSERBASE_API_KEY": "bb-key",
-        "BROWSERBASE_PROJECT_ID": "bb-project",
-    }
-
-    monkeypatch.setattr(ns, "get_env_value", lambda name: env.get(name, ""))
-    monkeypatch.setattr(
-        ns, "get_nous_portal_account_info", lambda: _account(logged_in=False)
-    )
-    monkeypatch.setattr(ns, "_toolset_enabled", lambda config, key: key == "browser")
-    monkeypatch.setattr(ns, "_has_agent_browser", lambda: False)
+    monkeypatch.setattr(ns, "_has_agent_browser", lambda: True)
+    monkeypatch.setattr(ns, "_local_browser_runnable", lambda: True)
     monkeypatch.setattr(ns, "resolve_openai_audio_api_key", lambda: "")
     monkeypatch.setattr(ns, "has_direct_modal_credentials", lambda: False)
     monkeypatch.setattr(ns, "is_managed_tool_gateway_ready", lambda vendor: False)
 
-    features = ns.get_nous_subscription_features(
-        {"browser": {"cloud_provider": "browserbase"}}
-    )
+    features = ns.get_nous_subscription_features({})
 
-    assert features.browser.available is False
-    assert features.browser.active is False
+    # CAMOFOX_URL no longer selects a browser backend in k-hermes.
+    assert features.browser.current_provider != "Camofox"
     assert features.browser.managed_by_nous is False
-    assert features.browser.current_provider == "Browserbase"
+
 
 
 def test_get_nous_subscription_features_does_not_treat_quoted_false_as_gateway_opt_in(monkeypatch):
@@ -346,31 +305,27 @@ def test_default_local_browser_unavailable_without_chromium(monkeypatch):
     assert features.browser.current_provider == "Local browser"
 
 
-def test_cloud_browserbase_available_without_local_chromium(monkeypatch):
-    """Cloud providers host their own Chromium, so the new local gate must not
-    regress them: agent-browser binary present + Browserbase creds is enough."""
-    env = {"BROWSERBASE_API_KEY": "bb-key", "BROWSERBASE_PROJECT_ID": "bb-project"}
+def test_cloud_browserbase_no_longer_available_without_plugin(monkeypatch):
+    env = {
+        "BROWSERBASE_API_KEY": "bb-key",
+        "BROWSERBASE_PROJECT_ID": "bb-project",
+    }
     monkeypatch.setattr(ns, "get_env_value", lambda name: env.get(name, ""))
     monkeypatch.setattr(
         ns, "get_nous_portal_account_info", lambda: _account(logged_in=False)
     )
     monkeypatch.setattr(ns, "_toolset_enabled", lambda config, key: key == "browser")
     monkeypatch.setattr(ns, "_has_agent_browser", lambda: True)
+    monkeypatch.setattr(ns, "_local_browser_runnable", lambda: False)
     monkeypatch.setattr(ns, "resolve_openai_audio_api_key", lambda: "")
     monkeypatch.setattr(ns, "has_direct_modal_credentials", lambda: False)
     monkeypatch.setattr(ns, "is_managed_tool_gateway_ready", lambda vendor: False)
-    # Chromium absent locally — must not matter for a cloud provider.
-    monkeypatch.setattr("tools.browser_tool._chromium_installed", lambda: False)
-    monkeypatch.setattr("tools.browser_tool._using_lightpanda_engine", lambda: False)
 
     features = ns.get_nous_subscription_features(
         {"browser": {"cloud_provider": "browserbase"}}
     )
-
-    assert features.browser.available is True
-    assert features.browser.active is True
-    assert features.browser.current_provider == "Browserbase"
-
+    assert features.browser.available is False
+    assert features.browser.current_provider == "browserbase"
 
 def test_get_gateway_eligible_tools_pool_excludes_video(monkeypatch):
     """A free-tool-pool user is offered the covered tools but NOT video gen."""
