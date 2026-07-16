@@ -30,6 +30,12 @@ Upstream PRs are intentionally not opened for these items.
 | Third-party browser plugins | Optional (`~/.hermes/plugins/browser/`) |
 | Browserbase / Firecrawl browser / Browser Use / Camofox | **Removed** |
 
+### Bundled CloakBrowser skills (`skills/web-automation/`)
+- **`captcha-solver`** — visual CAPTCHA handling via native `browser_*` + CloakBrowser only (no third-party solvers / alternate browsers).
+- **`work-management-browser`** — Asana / ClickUp / Confluence / Jira / Linear / Trello through CloakBrowser when API skills are unavailable.
+- Category description: `skills/web-automation/DESCRIPTION.md`.
+- Tests: `tests/skills/test_captcha_solver_skill.py`, `tests/skills/test_work_management_browser_skill.py`.
+
 ## Direct desktop
 - Encrypted media plane + no-strip route work under `agent/direct_desktop_*` and related session/state paths (see recent commits on `main`).
 
