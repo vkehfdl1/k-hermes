@@ -3,6 +3,13 @@
 This fork tracks changes that diverge from upstream Hermes Agent.
 Upstream PRs are intentionally not opened for these items.
 
+## Product identity (locked)
+
+- **Package-owned persona**: k-hermes identity is `돌쇠 (Dolshoi)`, defined in `hermes_cli/product_identity.py`.
+- **Not user-overridable**: with `PRODUCT_IDENTITY_LOCKED=True`, runtime ignores `$HERMES_HOME/SOUL.md` for system-prompt identity and rewrites that file to the package constant on `ensure_hermes_home()`.
+- **Why**: Dolshoi desktop isolates `HERMES_HOME` to `~/.dolshoi/hermes-profile`. Upstream Hermes treated SOUL.md as personalization; product voice must not depend on a mutable profile file or a personal `~/.hermes` install.
+- Upstream PRs are not opened for this product lock.
+
 ## Browser automation
 
 ### CloakBrowser is the default local browser path

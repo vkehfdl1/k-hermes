@@ -123,26 +123,14 @@ def _strip_yaml_frontmatter(content: str) -> str:
 # Constants
 # =========================================================================
 
-DEFAULT_AGENT_IDENTITY = (
-    "You are Hermes Agent, an intelligent AI assistant created by Nous Research. "
-    "You are helpful, knowledgeable, and direct. You assist users with a wide "
-    "range of tasks including answering questions, writing and editing code, "
-    "analyzing information, creative work, and executing actions via your tools. "
-    "You communicate clearly, admit uncertainty when appropriate, and prioritize "
-    "being genuinely useful over being verbose unless otherwise directed below. "
-    "Be targeted and efficient in your exploration and investigations."
+from hermes_cli.product_identity import (
+    PRODUCT_AGENT_IDENTITY,
+    PRODUCT_HELP_GUIDANCE,
 )
 
-HERMES_AGENT_HELP_GUIDANCE = (
-    "You run on Hermes Agent (by Nous Research). When the user needs help with "
-    "Hermes itself — configuring, setting up, using, extending, or troubleshooting "
-    "it — or when you need to understand your own features, tools, or capabilities, "
-    "the documentation at https://hermes-agent.nousresearch.com/docs is your "
-    "authoritative reference and always holds the latest, most up-to-date "
-    "information. Load the `hermes-agent` skill with skill_view(name='hermes-agent') "
-    "for additional guidance and proven workflows, but treat the docs as the source "
-    "of truth when the two differ."
-)
+DEFAULT_AGENT_IDENTITY = PRODUCT_AGENT_IDENTITY
+
+HERMES_AGENT_HELP_GUIDANCE = PRODUCT_HELP_GUIDANCE
 
 MEMORY_GUIDANCE = (
     "You have persistent memory across sessions. Save durable facts using the memory "
@@ -1794,12 +1782,20 @@ def _truncate_content(
 
 
 def load_soul_md(context_length: Optional[int] = None) -> Optional[str]:
-    """Load SOUL.md from HERMES_HOME and return its content, or None.
+    """Return the agent identity for system-prompt slot #1.
 
-    Used as the agent identity (slot #1 in the system prompt).  When this
-    returns content, ``build_context_files_prompt`` should be called with
-    ``skip_soul=True`` so SOUL.md isn't injected twice.
+    k-hermes product builds lock identity to the package constant so users
+    cannot override persona via ``$HERMES_HOME/SOUL.md``. Upstream Hermes
+    loads that file as personalization; Dolshoi does not.
     """
+    try:
+        from hermes_cli.product_identity import PRODUCT_IDENTITY_LOCKED
+    except Exception:
+        PRODUCT_IDENTITY_LOCKED = False
+
+    if PRODUCT_IDENTITY_LOCKED:
+        return DEFAULT_AGENT_IDENTITY
+
     try:
         from hermes_cli.config import ensure_hermes_home
         ensure_hermes_home()

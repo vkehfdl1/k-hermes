@@ -877,14 +877,35 @@ def _secure_file(path):
 
 
 def _ensure_default_soul_md(home: Path) -> None:
-    """Seed a default SOUL.md into HERMES_HOME, upgrading legacy empty templates.
+    """Seed SOUL.md into HERMES_HOME.
 
-    First run: write DEFAULT_SOUL_MD. Existing installs whose SOUL.md is still
-    the old comment-only scaffold (seeded by older install.sh / install.ps1 /
-    docker images, which shadowed the runtime default) get upgraded in place to
-    DEFAULT_SOUL_MD. A SOUL.md the user actually customized is never touched.
+    Product-locked k-hermes always rewrites SOUL.md to the package identity so
+    a stale Hermes Agent persona cannot linger on disk. Unlocked mode keeps
+    the upstream behaviour: seed once, upgrade legacy empty templates only,
+    never overwrite a user-customized SOUL.md.
     """
+    from hermes_cli.default_soul import DEFAULT_SOUL_MD, is_legacy_template_soul
+    try:
+        from hermes_cli.product_identity import (
+            PRODUCT_AGENT_IDENTITY,
+            PRODUCT_IDENTITY_LOCKED,
+        )
+    except Exception:
+        PRODUCT_IDENTITY_LOCKED = False
+        PRODUCT_AGENT_IDENTITY = DEFAULT_SOUL_MD
+
     soul_path = home / "SOUL.md"
+    if PRODUCT_IDENTITY_LOCKED:
+        desired = PRODUCT_AGENT_IDENTITY
+        try:
+            existing = soul_path.read_text(encoding="utf-8") if soul_path.exists() else None
+        except (OSError, UnicodeDecodeError):
+            existing = None
+        if existing != desired:
+            soul_path.write_text(desired, encoding="utf-8")
+            _secure_file(soul_path)
+        return
+
     if soul_path.exists():
         try:
             existing = soul_path.read_text(encoding="utf-8")

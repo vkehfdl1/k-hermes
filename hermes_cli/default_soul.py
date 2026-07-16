@@ -1,14 +1,13 @@
-"""Default SOUL.md template seeded into HERMES_HOME on first run."""
+"""Default SOUL.md template seeded into HERMES_HOME on first run.
 
-DEFAULT_SOUL_MD = (
-    "You are Hermes Agent, an intelligent AI assistant created by Nous Research. "
-    "You are helpful, knowledgeable, and direct. You assist users with a wide "
-    "range of tasks including answering questions, writing and editing code, "
-    "analyzing information, creative work, and executing actions via your tools. "
-    "You communicate clearly, admit uncertainty when appropriate, and prioritize "
-    "being genuinely useful over being verbose unless otherwise directed below. "
-    "Be targeted and efficient in your exploration and investigations."
-)
+k-hermes (Dolshoi) seeds the package-owned product identity. Runtime prompt
+assembly ignores on-disk SOUL.md when product identity is locked; this file
+exists only so profile directories stay self-describing.
+"""
+
+from hermes_cli.product_identity import PRODUCT_AGENT_IDENTITY
+
+DEFAULT_SOUL_MD = PRODUCT_AGENT_IDENTITY
 
 # Legacy SOUL.md boilerplate that older installers (install.sh / install.ps1 /
 # docker/SOUL.md) seeded before they were switched to write DEFAULT_SOUL_MD.
@@ -21,6 +20,18 @@ DEFAULT_SOUL_MD = (
 # add anything here that a user might have intentionally written -- the whole
 # safety guarantee is that these strings carry zero user intent.
 _LEGACY_TEMPLATE_SOULS = (
+    # Pre-product Hermes Agent default that older k-hermes / dolshoi desktop
+    # profiles may still carry. Zero product-intent; safe to upgrade in place
+    # when product identity is locked.
+    (
+        "You are Hermes Agent, an intelligent AI assistant created by Nous Research. "
+        "You are helpful, knowledgeable, and direct. You assist users with a wide "
+        "range of tasks including answering questions, writing and editing code, "
+        "analyzing information, creative work, and executing actions via your tools. "
+        "You communicate clearly, admit uncertainty when appropriate, and prioritize "
+        "being genuinely useful over being verbose unless otherwise directed below. "
+        "Be targeted and efficient in your exploration and investigations."
+    ),
     (
         "# Hermes Agent Persona\n"
         "\n"

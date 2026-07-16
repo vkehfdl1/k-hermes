@@ -59,12 +59,16 @@ class TestEnsureHermesHome:
             assert soul_path.exists()
             assert soul_path.read_text(encoding="utf-8").strip() != ""
 
-    def test_does_not_overwrite_existing_soul_md(self, tmp_path):
+    def test_product_locked_overwrites_existing_soul_md(self, tmp_path):
+        # k-hermes product identity is package-owned; user SOUL.md must not win.
+        from hermes_cli.product_identity import PRODUCT_AGENT_IDENTITY, PRODUCT_IDENTITY_LOCKED
+
+        assert PRODUCT_IDENTITY_LOCKED is True
         with patch.dict(os.environ, {"HERMES_HOME": str(tmp_path)}):
             soul_path = tmp_path / "SOUL.md"
             soul_path.write_text("custom soul", encoding="utf-8")
             ensure_hermes_home()
-            assert soul_path.read_text(encoding="utf-8") == "custom soul"
+            assert soul_path.read_text(encoding="utf-8") == PRODUCT_AGENT_IDENTITY
 
     def test_upgrades_legacy_template_soul_md(self, tmp_path):
         # Older installers seeded a comment-only scaffold that shadowed the
@@ -78,17 +82,19 @@ class TestEnsureHermesHome:
             ensure_hermes_home()
             assert soul_path.read_text(encoding="utf-8") == DEFAULT_SOUL_MD
 
-    def test_preserves_legacy_template_with_user_persona(self, tmp_path):
-        # If the user typed a persona alongside the scaffold, the content no
-        # longer matches the known empty template — leave it untouched.
+    def test_product_locked_rewrites_legacy_template_with_user_persona(self, tmp_path):
+        # Product lock forces package identity even when the user appended text
+        # to a legacy scaffold.
         from hermes_cli.default_soul import _LEGACY_TEMPLATE_SOULS
+        from hermes_cli.product_identity import PRODUCT_AGENT_IDENTITY, PRODUCT_IDENTITY_LOCKED
 
+        assert PRODUCT_IDENTITY_LOCKED is True
         mixed = _LEGACY_TEMPLATE_SOULS[0] + "\nYou are a helpful pirate."
         with patch.dict(os.environ, {"HERMES_HOME": str(tmp_path)}):
             soul_path = tmp_path / "SOUL.md"
             soul_path.write_text(mixed, encoding="utf-8")
             ensure_hermes_home()
-            assert soul_path.read_text(encoding="utf-8") == mixed
+            assert soul_path.read_text(encoding="utf-8") == PRODUCT_AGENT_IDENTITY
 
     def test_existing_named_profile_still_bootstraps_subdirs(self, tmp_path):
         profile_home = tmp_path / ".hermes" / "profiles" / "coder"

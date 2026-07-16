@@ -23,6 +23,7 @@ from agent.prompt_builder import (
     _get_context_file_max_chars,
     _CONTEXT_FILE_DYNAMIC_CEILING,
     DEFAULT_AGENT_IDENTITY,
+    load_soul_md,
     drain_truncation_warnings,
     TOOL_USE_ENFORCEMENT_GUIDANCE,
     TOOL_USE_ENFORCEMENT_MODELS,
@@ -1019,6 +1020,20 @@ class TestStripYamlFrontmatter:
 class TestPromptBuilderConstants:
     def test_default_identity_non_empty(self):
         assert len(DEFAULT_AGENT_IDENTITY) > 50
+
+    def test_product_identity_is_dolshoi(self):
+        assert "돌쇠" in DEFAULT_AGENT_IDENTITY
+        assert "Hermes Agent, an intelligent AI assistant created by Nous Research" not in DEFAULT_AGENT_IDENTITY
+
+    def test_load_soul_md_ignores_user_file_when_product_locked(self, tmp_path, monkeypatch):
+        from hermes_cli.product_identity import PRODUCT_AGENT_IDENTITY, PRODUCT_IDENTITY_LOCKED
+
+        assert PRODUCT_IDENTITY_LOCKED is True
+        soul = tmp_path / "SOUL.md"
+        soul.write_text("USER HIJACKED PERSONA", encoding="utf-8")
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        assert load_soul_md() == PRODUCT_AGENT_IDENTITY
+        assert "USER HIJACKED PERSONA" not in (load_soul_md() or "")
 
     def test_platform_hints_known_platforms(self):
         assert "whatsapp" in PLATFORM_HINTS
