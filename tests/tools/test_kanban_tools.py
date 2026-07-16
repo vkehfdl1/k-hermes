@@ -1399,9 +1399,8 @@ def test_kanban_guidance_not_in_normal_prompt(monkeypatch, tmp_path):
     assert "kanban_show()" not in prompt
 
 
-def test_kanban_guidance_in_worker_prompt(monkeypatch, tmp_path):
-    """A worker session (HERMES_KANBAN_TASK set) MUST have the full
-    lifecycle guidance in its system prompt."""
+def test_kanban_guidance_not_in_worker_prompt(monkeypatch, tmp_path):
+    """dolshoi/k-hermes disables Kanban system-prompt injection even for workers."""
     monkeypatch.setenv("HERMES_KANBAN_TASK", "t_fake")
     home = tmp_path / ".hermes"
     home.mkdir()
@@ -1423,39 +1422,14 @@ def test_kanban_guidance_in_worker_prompt(monkeypatch, tmp_path):
         skip_memory=True,
     )
     prompt = a._build_system_prompt()
-    # Header phrase (identity-free — SOUL.md owns identity, layer 3 is protocol)
-    assert "Kanban task execution protocol" in prompt
-    # Lifecycle signals
-    assert "kanban_show()" in prompt
-    assert "kanban_complete" in prompt
-    assert "kanban_block" in prompt
-    assert "kanban_create" in prompt
-    # Anti-shell guidance
-    assert "Do not shell out" in prompt or "tools — they work" in prompt
+    assert "Kanban task execution protocol" not in prompt
+    assert "kanban_show()" not in prompt
 
 
-def test_kanban_guidance_prompt_size_bounded(monkeypatch, tmp_path):
-    """Sanity: the guidance block stays lean so it doesn't blow up the
-    cached prompt.
-
-    The ceiling guards against unbounded growth, not against any growth.
-    The block absorbed the load-bearing worker/orchestrator reference
-    details (workspace kinds, deliverable artifacts, created-card claims,
-    profile discovery) when the standalone kanban-worker / kanban-orchestrator
-    skills were removed and folded into this always-injected guidance, so the
-    ceiling is sized to fit that content with a little headroom.
-    """
-    monkeypatch.setenv("HERMES_KANBAN_TASK", "t_fake")
-    home = tmp_path / ".hermes"
-    home.mkdir()
-    monkeypatch.setenv("HERMES_HOME", str(home))
-    from pathlib import Path as _P
-    monkeypatch.setattr(_P, "home", lambda: tmp_path)
-
+def test_kanban_guidance_constant_disabled(monkeypatch, tmp_path):
+    """The KANBAN_GUIDANCE constant is intentionally empty for dolshoi."""
     from agent.prompt_builder import KANBAN_GUIDANCE
-    assert 1_500 < len(KANBAN_GUIDANCE) < 5_500, (
-        f"KANBAN_GUIDANCE is {len(KANBAN_GUIDANCE)} chars — too short (missing?) or too long"
-    )
+    assert KANBAN_GUIDANCE == ""
 
 
 # ---------------------------------------------------------------------------

@@ -1019,6 +1019,9 @@ class TestStripYamlFrontmatter:
 class TestPromptBuilderConstants:
     def test_default_identity_non_empty(self):
         assert len(DEFAULT_AGENT_IDENTITY) > 50
+        assert "돌쇠" in DEFAULT_AGENT_IDENTITY or "Dolshoi" in DEFAULT_AGENT_IDENTITY
+        assert "created by Nous Research" not in DEFAULT_AGENT_IDENTITY
+        assert "You are Hermes Agent" not in DEFAULT_AGENT_IDENTITY
 
     def test_platform_hints_known_platforms(self):
         assert "whatsapp" in PLATFORM_HINTS
@@ -1027,14 +1030,17 @@ class TestPromptBuilderConstants:
         assert "discord" in PLATFORM_HINTS
         assert "cron" in PLATFORM_HINTS
         assert "cli" in PLATFORM_HINTS
-        assert "tui" in PLATFORM_HINTS
-        assert "api_server" in PLATFORM_HINTS
+        assert "desktop" in PLATFORM_HINTS
         assert "webui" in PLATFORM_HINTS
+        assert "tui" not in PLATFORM_HINTS
+        assert "api_server" not in PLATFORM_HINTS
+        assert "sms" not in PLATFORM_HINTS
+        assert "email" not in PLATFORM_HINTS
 
-    def test_cli_and_tui_hints_flag_local_only_cron(self):
-        """#51568 — cron jobs from CLI/TUI sessions don't deliver back into
+    def test_cli_and_desktop_hints_flag_local_only_cron(self):
+        """#51568 — cron jobs from CLI/desktop sessions don't deliver back into
         the session, so the agent must be told up front not to promise it."""
-        for key in ("cli", "tui"):
+        for key in ("cli", "desktop"):
             hint = PLATFORM_HINTS[key]
             assert "LOCAL-ONLY" in hint
             assert "deliver" in hint
@@ -1123,10 +1129,16 @@ class TestPromptBuilderConstants:
 
     def test_platform_hints_webui(self):
         hint = PLATFORM_HINTS["webui"]
-        assert "WebUI" in hint
-        assert "MEDIA:" in hint
+        assert "WebUI" in hint or "Dolshoi WebUI" in hint
         assert "Markdown" in hint
-        assert "absolute" in hint
+        assert "absolute" in hint.lower()
+
+    def test_platform_hints_desktop_absolute_paths(self):
+        hint = PLATFORM_HINTS["desktop"]
+        assert "absolute" in hint.lower()
+        assert "MEDIA:" in hint  # negative guidance still mentions it
+        assert any(m in hint.lower() for m in ("do not emit media", "do not", "don't"))
+        assert "plain text" in hint.lower()
 
 
 # =========================================================================

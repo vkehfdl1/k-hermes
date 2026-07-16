@@ -1178,16 +1178,8 @@ def init_agent(
     elif not agent.quiet_mode:
         print("🛠️  No tools loaded (all tools filtered out or unavailable)")
 
-    # Kanban worker/orchestrator lifecycle guidance is session-static:
-    # the dispatcher decides at spawn time whether this process is a kanban
-    # worker (kanban_show tool is present iff HERMES_KANBAN_TASK is set).
-    # Resolving the ~835-token block once here avoids re-running the
-    # membership test + reference on every system-prompt rebuild
-    # (init + each context compression).
-    from agent.prompt_builder import KANBAN_GUIDANCE
-    agent._kanban_worker_guidance = (
-        KANBAN_GUIDANCE if "kanban_show" in agent.valid_tool_names else ""
-    )
+    # Kanban system-prompt guidance is disabled for dolshoi/k-hermes.
+    agent._kanban_worker_guidance = ""
 
     # Check tool requirements
     if agent.tools and not agent.quiet_mode:

@@ -50,3 +50,29 @@ Upstream PRs are intentionally not opened for these items.
 ### Docs / catalog updates
 - Website skill docs, sidebars, and EN/zh-Hans skill catalogs no longer list the removed skills.
 - Skill-authoring category list updated accordingly.
+
+## System prompt (돌쇠 / Dolshoi identity)
+
+### Product identity rewrite
+- Default agent identity is **돌쇠 (Dolshoi)**, not Hermes Agent / Nous Research.
+- Purpose: reduce everyday friction for people in Korea; concise, action-first; pursue user requests until done or a real blocker is reported.
+- `DEFAULT_AGENT_IDENTITY` in `agent/prompt_builder.py`; user `SOUL.md` should match when present.
+
+### Hermes self-help surface removed
+- Removed Hermes docs / `hermes-agent` skill steering from the system prompt.
+- Added `DOLSHOI_PRODUCT_BOUNDARY`: do not answer Hermes/hermes-agent/Nous product questions; do not load or recommend `hermes-agent` skills.
+- Skills index blocks `hermes-agent`, `hermes-agent-dev`, `hermes-agent-operations` via `_BLOCKED_SYSTEM_PROMPT_SKILLS`.
+
+### CloakBrowser mandatory in prompt
+- When any `browser_*` tool is loaded, inject `CLOAKBROWSER_GUIDANCE` requiring CloakBrowser-backed `browser_*` tools (no silent Chrome/cloud/CDP substitution unless the user explicitly `/browser connect`).
+
+### Kanban prompt guidance disabled
+- `KANBAN_GUIDANCE` is empty and is **not** injected into the system prompt (normal chat or kanban worker).
+
+### Platform hints for desktop IPC
+- Removed platform hints: `tui`, `sms`, `email`, `api_server`.
+- Added/updated `desktop` (and mapped historical `platform="tui"` → desktop hint): absolute filesystem paths as plain text for file/link rendering; do not emit `MEDIA:` tags on desktop.
+- `cli` / `webui` also steer absolute plain-text paths for file handoff.
+
+### Single-profile product
+- Multi-profile system-prompt warnings (`Active Hermes profile…`, cross-profile write hints) removed. One profile surface only.

@@ -27,10 +27,10 @@ import json
 from typing import Any, Dict, List, Optional
 
 from agent.prompt_builder import (
+    CLOAKBROWSER_GUIDANCE,
     DEFAULT_AGENT_IDENTITY,
+    DOLSHOI_PRODUCT_BOUNDARY,
     GOOGLE_MODEL_OPERATIONAL_GUIDANCE,
-    HERMES_AGENT_HELP_GUIDANCE,
-    KANBAN_GUIDANCE,
     MEMORY_GUIDANCE,
     OPENAI_MODEL_EXECUTION_GUIDANCE,
     PARALLEL_TOOL_CALL_GUIDANCE,
@@ -161,8 +161,8 @@ def build_system_prompt_parts(agent: Any, system_message: Optional[str] = None) 
         # Fallback to hardcoded identity
         stable_parts.append(DEFAULT_AGENT_IDENTITY)
 
-    # Pointer to the hermes-agent skill + docs for user questions about Hermes itself.
-    stable_parts.append(HERMES_AGENT_HELP_GUIDANCE)
+    # Product boundary: never discuss Hermes / hermes-agent docs or skills.
+    stable_parts.append(DOLSHOI_PRODUCT_BOUNDARY)
 
     # Universal task-completion / no-fabrication guidance.  Applied to ALL
     # models regardless of tool_use_enforcement gating — the failure modes
@@ -192,16 +192,7 @@ def build_system_prompt_parts(agent: Any, system_message: Optional[str] = None) 
         tool_guidance.append(SESSION_SEARCH_GUIDANCE)
     if "skill_manage" in agent.valid_tool_names:
         tool_guidance.append(SKILLS_GUIDANCE)
-    # Kanban worker/orchestrator lifecycle — only present when the
-    # dispatcher spawned this process (kanban_show check_fn gates on
-    # HERMES_KANBAN_TASK env var). Normal chat sessions never see
-    # this block. Resolved once at __init__ (see _kanban_worker_guidance).
-    _kanban_guidance = getattr(agent, "_kanban_worker_guidance", None)
-    if _kanban_guidance:
-        tool_guidance.append(_kanban_guidance)
-    elif _kanban_guidance is None and "kanban_show" in agent.valid_tool_names:
-        # Fallback for code paths that bypass agent_init (rare).
-        tool_guidance.append(KANBAN_GUIDANCE)
+    # Kanban guidance is intentionally not injected for dolshoi/k-hermes.
     if tool_guidance:
         stable_parts.append(" ".join(tool_guidance))
 
@@ -217,6 +208,10 @@ def build_system_prompt_parts(agent: Any, system_message: Optional[str] = None) 
     if "computer_use" in agent.valid_tool_names:
         from agent.prompt_builder import computer_use_guidance
         stable_parts.append(computer_use_guidance())
+
+    # Browser tools always mean CloakBrowser on k-hermes.
+    if any(name.startswith("browser_") for name in agent.valid_tool_names):
+        stable_parts.append(CLOAKBROWSER_GUIDANCE)
 
     nous_subscription_prompt = _r.build_nous_subscription_prompt(agent.valid_tool_names)
     if nous_subscription_prompt:
@@ -347,41 +342,12 @@ def build_system_prompt_parts(agent: Any, system_message: Optional[str] = None) 
             # Probe failure must never block prompt build.
             pass
 
-    # Active-profile hint — names the Hermes profile the agent is running
-    # under so it doesn't conflate ~/.hermes/skills/ (default profile) with
-    # ~/.hermes/profiles/<active>/skills/ (this profile's). Deterministic
-    # for the lifetime of the agent — profile name doesn't change
-    # mid-session, so this doesn't break the prompt cache.
-    # See file_safety._resolve_active_profile_name + classify_cross_profile_target
-    # for the matching tool-side guard.
-    try:
-        from agent.file_safety import _resolve_active_profile_name
-        active_profile = _resolve_active_profile_name()
-    except Exception:
-        active_profile = "default"
-    if active_profile == "default":
-        stable_parts.append(
-            "Active Hermes profile: default. Other profiles (if any) live "
-            "under ~/.hermes/profiles/<name>/. Each profile has its own "
-            "skills/, plugins/, cron/, and memories/ that affect a different "
-            "session than this one. Do not modify another profile's "
-            "skills/plugins/cron/memories unless the user explicitly directs "
-            "you to."
-        )
-    else:
-        stable_parts.append(
-            f"Active Hermes profile: {active_profile}. This session reads "
-            f"and writes ~/.hermes/profiles/{active_profile}/. The default "
-            f"profile's data lives at ~/.hermes/skills/, ~/.hermes/plugins/, "
-            f"~/.hermes/cron/, ~/.hermes/memories/ — those belong to a "
-            f"different session run from a different shell. Do NOT modify "
-            f"another profile's skills/plugins/cron/memories unless the user "
-            f"explicitly directs you to. The cross-profile write guard will "
-            f"refuse such writes by default; pass cross_profile=True only "
-            f"after explicit direction."
-        )
+    # Single-profile product: do not mention multi-profile paths or switching.
 
     platform_key = (agent.platform or "").lower().strip()
+    # Desktop shell historically reported platform="tui"; map to desktop hint.
+    if platform_key == "tui":
+        platform_key = "desktop"
     # Resolve the built-in/plugin default hint for this platform, then apply
     # any per-platform override from config (platform_hints.<platform>).
     _default_hint = ""
