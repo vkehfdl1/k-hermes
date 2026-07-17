@@ -76,10 +76,15 @@ class TestIsCodingContext:
         assert cc.is_coding_context(platform="discord", cwd=tmp_path, config=cfg) is False
         assert cc.is_coding_context(platform="tui", cwd=tmp_path, config=cfg) is True
 
-    def test_default_mode_is_auto(self, tmp_path):
-        # Unknown/missing value normalizes to auto.
+    def test_default_mode_is_off(self, tmp_path):
+        # k-hermes product default: missing/unknown → off (no coding posture).
         _git_init(tmp_path)
-        assert cc.is_coding_context(platform="cli", cwd=tmp_path, config={}) is True
+        assert cc.is_coding_context(platform="cli", cwd=tmp_path, config={}) is False
+        assert cc.is_coding_context(
+            platform="cli",
+            cwd=tmp_path,
+            config={"agent": {"coding_context": "bogus"}},
+        ) is False
 
 
 # ── toolset substitution ────────────────────────────────────────────────────
@@ -328,10 +333,22 @@ class TestStatusParsing:
 class TestRuntimeMode:
     def test_resolves_coding_in_repo(self, tmp_path):
         _git_init(tmp_path)
-        mode = cc.resolve_runtime_mode(platform="cli", cwd=tmp_path, config={})
+        # Explicit auto — product default is off, so empty config stays general.
+        mode = cc.resolve_runtime_mode(
+            platform="cli",
+            cwd=tmp_path,
+            config={"agent": {"coding_context": "auto"}},
+        )
         assert mode.is_coding is True
         assert mode.kind == "coding"
         assert mode.profile is cc.CODING_PROFILE
+
+    def test_default_config_stays_general_in_repo(self, tmp_path):
+        _git_init(tmp_path)
+        mode = cc.resolve_runtime_mode(platform="cli", cwd=tmp_path, config={})
+        assert mode.is_coding is False
+        assert mode.kind == "general"
+        assert mode.system_blocks() == []
 
     def test_resolves_general_outside_workspace(self, tmp_path):
         mode = cc.resolve_runtime_mode(platform="cli", cwd=tmp_path, config={})

@@ -81,7 +81,9 @@ class TestCodingContextBlock:
         _init_code_repo(tmp_path)
         monkeypatch.setenv("TERMINAL_CWD", str(tmp_path))
         agent = _make_agent(valid_tool_names=["read_file"], platform="cli")
-        stable = _stable_prompt(agent)
+        # Product default is off; force auto so the coding brief is injected.
+        with patch("agent.coding_context._coding_mode", return_value="auto"):
+            stable = _stable_prompt(agent)
         assert "coding agent" in stable
         assert "Workspace" in stable
 

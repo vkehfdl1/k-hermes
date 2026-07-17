@@ -10,6 +10,12 @@ Upstream PRs are intentionally not opened for these items.
 - **Why**: Dolshoi desktop isolates `HERMES_HOME` to `~/.dolshoi/hermes-profile`. Upstream Hermes treated SOUL.md as personalization; product voice must not depend on a mutable profile file or a personal `~/.hermes` install.
 - Upstream PRs are not opened for this product lock.
 
+## Coding posture default (locked off)
+
+- **Default `agent.coding_context: off`**: k-hermes does not auto-inject the coding pair-programmer brief + workspace snapshot.
+- Upstream Hermes defaults to `auto` (enable in interactive code workspaces). Dolshoi product voice is a general practical agent; coding posture is opt-in via config (`auto` / `on` / `focus`).
+- Resolver + `DEFAULT_CONFIG` both default to `off`; unrecognised values also normalize to `off`.
+
 ## Browser automation
 
 ### CloakBrowser is the default local browser path

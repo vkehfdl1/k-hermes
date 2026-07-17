@@ -1073,20 +1073,21 @@ DEFAULT_CONFIG = {
         # env var overrides this (build-time/container mechanism).
         "environment_hint": "",
         # Coding posture — on interactive coding surfaces (CLI, TUI, desktop
-        # app, ACP) in a code workspace, Hermes adds a coding operating brief
+        # app, ACP) in a code workspace, Hermes can add a coding operating brief
         # + a live git/workspace snapshot to the system prompt. See
         # agent/coding_context.py.
-        #   "auto" (default) — prompt-only posture when the surface is
-        #                      interactive AND cwd is a code workspace.
-        #                      Toolsets are never touched; messaging platforms
-        #                      unaffected.
-        #   "focus"          — auto + collapse the toolset to the lean coding
-        #                      set (+ enabled MCP servers) + demote non-coding
-        #                      skill categories to names-only in the prompt's
-        #                      skill index. Explicit opt-in.
-        #   "on"             — force the prompt posture everywhere.
-        #   "off"            — disable entirely.
-        "coding_context": "auto",
+        #   "off"  (default, k-hermes) — disable entirely. Product sessions stay
+        #                              general/생활-agent unless explicitly opted in.
+        #   "auto"                     — prompt-only posture when the surface is
+        #                              interactive AND cwd is a code workspace.
+        #                              Toolsets are never touched; messaging
+        #                              platforms unaffected.
+        #   "focus"                    — auto + collapse the toolset to the lean
+        #                              coding set (+ enabled MCP servers) + demote
+        #                              non-coding skill categories to names-only
+        #                              in the prompt's skill index. Explicit opt-in.
+        #   "on"                       — force the prompt posture everywhere.
+        "coding_context": "off",
         # Standing operator instructions for the coding posture. A string (or
         # list of strings) appended to the coding brief as an extra stable
         # system block — pin project-wide workflow rules here instead of editing

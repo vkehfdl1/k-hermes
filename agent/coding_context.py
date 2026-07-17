@@ -38,7 +38,10 @@ session (deferred), the same contract as ``/skills install`` vs ``--now``.
 
 Activation (config ``agent.coding_context``):
 
-  * ``auto`` (default) — posture (brief + snapshot) on an interactive coding
+  * ``off`` (default, k-hermes product lock) — disable coding posture entirely.
+    No coding brief, no workspace snapshot. Opt back in with ``auto``/``on``/
+    ``focus`` if needed.
+  * ``auto`` — posture (brief + snapshot) on an interactive coding
     surface sitting in a code workspace (git repo or recognised project root).
     Prompt-only; toolsets and the skill index untouched.
   * ``focus`` — like ``auto``, but additionally collapses the toolset to the
@@ -46,7 +49,6 @@ Activation (config ``agent.coding_context``):
     categories to names-only in the prompt's skill index (no skill is ever
     hidden). Explicit opt-in for a lean schema.
   * ``on`` — force the posture anywhere (incl. non-workspaces). Prompt-only.
-  * ``off`` — disable entirely.
 """
 
 from __future__ import annotations
@@ -333,7 +335,12 @@ def get_profile(name: str) -> ContextProfile:
 
 
 def _coding_mode(config: Optional[dict[str, Any]]) -> str:
-    """Return the normalized ``agent.coding_context`` mode (auto/focus/on/off)."""
+    """Return the normalized ``agent.coding_context`` mode (auto/focus/on/off).
+
+    k-hermes product default is ``off`` so desktop/general sessions do not
+    silently rebrand as a coding pair-programmer. Explicit ``auto``/``on``/
+    ``focus`` still work when configured.
+    """
     if config is None:
         try:
             from hermes_cli.config import load_config
@@ -341,15 +348,16 @@ def _coding_mode(config: Optional[dict[str, Any]]) -> str:
             config = load_config()
         except Exception:
             config = {}
-    raw = ((config or {}).get("agent", {}) or {}).get("coding_context", "auto")
+    raw = ((config or {}).get("agent", {}) or {}).get("coding_context", "off")
     mode = str(raw).strip().lower()
     if mode in {"focus", "strict", "lean"}:
         return "focus"
     if mode in {"on", "true", "yes", "1", "always"}:
         return "on"
-    if mode in {"off", "false", "no", "0", "never"}:
-        return "off"
-    return "auto"
+    if mode in {"auto"}:
+        return "auto"
+    # Default product lock + any unrecognised value → off.
+    return "off"
 
 
 def _coding_instructions(config: Optional[dict[str, Any]]) -> str:
@@ -476,7 +484,8 @@ class RuntimeMode:
     cwd: Path
     # The normalized ``agent.coding_context`` mode this posture was resolved
     # under (auto/focus/on/off). Toolset collapse is gated on ``focus``.
-    config_mode: str = "auto"
+    # k-hermes product default is ``off``.
+    config_mode: str = "off"
     # The model id this session runs (e.g. "anthropic/claude-opus-4.8"). Used
     # only to steer edit-format guidance toward the model's family — see
     # ``_edit_format_line``. Fixed for the session, so cache-safe.
