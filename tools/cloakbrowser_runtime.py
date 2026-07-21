@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_PORT = 9222
 DEFAULT_IDLE_TIMEOUT = 600
-DEFAULT_STARTUP_TIMEOUT = 10
+DEFAULT_STARTUP_TIMEOUT = 30
 SAFE_SEED_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 
 _process: subprocess.Popen | None = None
@@ -88,10 +88,38 @@ def peek_status_url(seed: str) -> str:
 
 
 def _find_root() -> Path:
+    """Locate the CloakBrowser checkout containing ``bin/cloakserve``.
+
+    An explicit ``CLOAKBROWSER_ROOT`` always wins (even when broken, so the
+    operator gets an actionable error about the path they configured).
+    Otherwise scan the known layouts and return the first checkout that
+    actually has ``bin/cloakserve``:
+
+    1. Sibling of this k-hermes checkout (symlinks resolved) — dev layout.
+    2. Sibling of the *unresolved* file location — a symlinked managed
+       checkout (e.g. ``~/.dolshoi/k-hermes`` -> a dev tree) whose real
+       parent differs from its logical parent.
+    3. ``~/.hermes/CloakBrowser`` — the managed data-dir clone.
+    """
     configured = os.environ.get("CLOAKBROWSER_ROOT", "").strip()
     if configured:
         return Path(configured).expanduser()
-    return Path(__file__).resolve().parents[2] / "CloakBrowser"
+
+    candidates = _candidate_roots()
+    for candidate in candidates:
+        if (candidate / "bin" / "cloakserve").is_file():
+            return candidate
+    # Nothing found: return the primary candidate so _cloakserve_executable
+    # raises its actionable "set CLOAKBROWSER_ROOT" error for that path.
+    return candidates[0]
+
+
+def _candidate_roots() -> list[Path]:
+    return [
+        Path(__file__).resolve().parents[2] / "CloakBrowser",
+        Path(__file__).absolute().parents[2] / "CloakBrowser",
+        Path.home() / ".hermes" / "CloakBrowser",
+    ]
 
 
 def _cloakserve_executable(root: Path) -> Path:
@@ -151,21 +179,52 @@ def launch_command(root: Path, cloakserve: Path) -> list[str]:
     return cmd
 
 
+def _log_path() -> Path:
+    from hermes_constants import get_hermes_home
+
+    log_dir = get_hermes_home() / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    return log_dir / "cloakserve.log"
+
+
+def _log_tail(max_bytes: int = 4096) -> str:
+    """Return the tail of the cloakserve log for actionable error messages."""
+    try:
+        path = _log_path()
+        data = path.read_bytes()
+        return data[-max_bytes:].decode("utf-8", errors="replace").strip()
+    except Exception:
+        return ""
+
+
 def launch_cloakserve() -> None:
     global _process
     root = _find_root()
     cloakserve = _cloakserve_executable(root)
     cmd = launch_command(root, cloakserve)
+    # PYTHONPATH: put the CloakBrowser checkout first so `import cloakbrowser`
+    # resolves from the checkout itself even when the checkout's .venv has a
+    # stale/broken editable install (a real observed failure mode: the venv's
+    # .pth pointed at a moved directory and cloakserve died on import).
+    launch_env = dict(os.environ)
+    existing_pythonpath = launch_env.get("PYTHONPATH", "")
+    launch_env["PYTHONPATH"] = os.pathsep.join(
+        part for part in (str(root), existing_pythonpath) if part
+    )
+    launch_env["CLOAKBROWSER_PEEK_TOKEN"] = peek_token()
+    launch_env["CLOAKSERVE_PEEK_TOKEN"] = peek_token()
+    # Capture output to a log file instead of DEVNULL so a crashed cloakserve
+    # leaves an actionable trace (surfaced in ensure_cdp_url's error message).
+    try:
+        log_file = open(_log_path(), "ab")
+    except OSError:
+        log_file = subprocess.DEVNULL
     popen_extra = {
         "cwd": str(root),
-        "stdout": subprocess.DEVNULL,
-        "stderr": subprocess.DEVNULL,
+        "stdout": log_file,
+        "stderr": log_file,
         "stdin": subprocess.DEVNULL,
-        "env": {
-            **os.environ,
-            "CLOAKBROWSER_PEEK_TOKEN": peek_token(),
-            "CLOAKSERVE_PEEK_TOKEN": peek_token(),
-        },
+        "env": launch_env,
     }
     if os.name == "nt":
         popen_extra["creationflags"] = windows_hide_flags()
@@ -185,6 +244,9 @@ def launch_cloakserve() -> None:
             "Failed to start CloakBrowser cloakserve from "
             f"{cloakserve}: {exc}"
         ) from exc
+    finally:
+        if log_file is not subprocess.DEVNULL:
+            log_file.close()
 
 
 def _resolved_cdp_url(cdp_url: str) -> bool:
@@ -226,15 +288,27 @@ def ensure_cdp_url(
     deadline = time.monotonic() + timeout_s
     last_cdp_url = cdp_url
     while time.monotonic() < deadline:
+        proc = _process
+        if proc is not None and proc.poll() is not None:
+            # Fail fast with the crash output instead of burning the full
+            # timeout on a process that already died (e.g. import errors).
+            tail = _log_tail()
+            detail = f"\n--- cloakserve log tail ---\n{tail}" if tail else ""
+            raise RuntimeError(
+                "CloakBrowser cloakserve exited immediately with code "
+                f"{proc.returncode}.{detail}"
+            )
         last_cdp_url = resolve_cdp_url(url)
         if _resolved_cdp_url(last_cdp_url) and _peek_token_accepted(seed):
             return last_cdp_url
         time.sleep(0.1)
 
+    tail = _log_tail()
+    detail = f"\n--- cloakserve log tail ---\n{tail}" if tail else ""
     raise RuntimeError(
         "CloakBrowser cloakserve did not expose a CDP websocket at "
         f"{url} within {timeout_s}s; last response resolved to "
-        f"{redact_url(last_cdp_url)}."
+        f"{redact_url(last_cdp_url)}.{detail}"
     )
 
 

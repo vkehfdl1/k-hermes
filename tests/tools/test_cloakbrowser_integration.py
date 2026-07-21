@@ -1,4 +1,5 @@
 import logging
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -109,6 +110,9 @@ def test_default_browser_session_uses_cloakbrowser_cdp(monkeypatch, tmp_path):
     assert popen.call_args.kwargs["cwd"] == str(root)
     assert popen.call_args.kwargs["env"]["CLOAKBROWSER_PEEK_TOKEN"] == PEEK_TOKEN
     assert popen.call_args.kwargs["env"]["CLOAKSERVE_PEEK_TOKEN"] == PEEK_TOKEN
+    # The checkout itself must lead PYTHONPATH so `import cloakbrowser`
+    # never depends on the checkout's venv having a healthy editable install.
+    assert popen.call_args.kwargs["env"]["PYTHONPATH"].split(os.pathsep)[0] == str(root)
 
 
 def test_cloakserve_launch_uses_uv_serve_environment(monkeypatch, tmp_path):
@@ -144,6 +148,70 @@ def test_cloakserve_launch_uses_uv_serve_environment(monkeypatch, tmp_path):
         "--headless=false",
     ]
     assert popen.call_args.kwargs["env"]["CLOAKBROWSER_PEEK_TOKEN"] == PEEK_TOKEN
+    assert popen.call_args.kwargs["env"]["PYTHONPATH"].split(os.pathsep)[0] == str(root)
+
+
+class _DeadProcess:
+    returncode = 1
+
+    def poll(self):
+        return 1
+
+    def terminate(self):
+        pass
+
+
+def test_crashed_cloakserve_fails_fast_with_log_tail(monkeypatch, tmp_path):
+    # Given: cloakserve dies immediately after spawn (e.g. import error).
+    _install_cloakserve(tmp_path, monkeypatch)
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes-home"))
+    provider = Mock()
+    monkeypatch.setattr(browser_tool, "_get_cloud_provider", lambda: provider)
+    monkeypatch.setattr(browser_tool, "_get_cdp_override", lambda: "")
+    monkeypatch.setattr(cloakbrowser_runtime.shutil, "which", lambda name: None)
+    monkeypatch.setattr(browser_tool.requests, "get", Mock(side_effect=RuntimeError("offline")))
+    monkeypatch.setattr(cloakbrowser_runtime.subprocess, "Popen", Mock(return_value=_DeadProcess()))
+    log_dir = tmp_path / "hermes-home" / "logs"
+    log_dir.mkdir(parents=True)
+    (log_dir / "cloakserve.log").write_text(
+        "ModuleNotFoundError: No module named 'cloakbrowser'\n", encoding="utf-8"
+    )
+
+    # When/Then: the failure surfaces immediately with the crash output,
+    # instead of burning the whole startup timeout polling a dead process.
+    with pytest.raises(RuntimeError, match="exited immediately") as excinfo:
+        browser_tool._get_session_info("task-crash")
+    assert "ModuleNotFoundError" in str(excinfo.value)
+
+
+def test_find_root_skips_candidates_without_cloakserve(monkeypatch, tmp_path):
+    # Given: the primary sibling candidate has no bin/cloakserve, but a later
+    # candidate (e.g. the managed ~/.hermes/CloakBrowser clone) does.
+    monkeypatch.delenv("CLOAKBROWSER_ROOT", raising=False)
+    missing = tmp_path / "missing" / "CloakBrowser"
+    managed = tmp_path / "home" / ".hermes" / "CloakBrowser"
+    (managed / "bin").mkdir(parents=True)
+    (managed / "bin" / "cloakserve").write_text("#!/usr/bin/env python3\n", encoding="utf-8")
+    monkeypatch.setattr(
+        cloakbrowser_runtime, "_candidate_roots", lambda: [missing, managed]
+    )
+
+    # When: the root is resolved without CLOAKBROWSER_ROOT.
+    root = cloakbrowser_runtime._find_root()
+
+    # Then: the first candidate that actually contains bin/cloakserve wins.
+    assert root == managed
+
+
+def test_find_root_returns_primary_candidate_when_none_exist(monkeypatch, tmp_path):
+    # Given: no candidate contains bin/cloakserve.
+    monkeypatch.delenv("CLOAKBROWSER_ROOT", raising=False)
+    primary = tmp_path / "nowhere" / "CloakBrowser"
+    monkeypatch.setattr(cloakbrowser_runtime, "_candidate_roots", lambda: [primary])
+
+    # When/Then: the primary candidate is returned so the caller's error
+    # message names the expected path.
+    assert cloakbrowser_runtime._find_root() == primary
 
 
 def test_cloud_provider_is_skipped_when_cloakbrowser_default_is_enabled(monkeypatch, tmp_path):
