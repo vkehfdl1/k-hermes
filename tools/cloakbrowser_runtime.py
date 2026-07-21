@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import atexit
 import logging
 import os
 import re
@@ -41,13 +40,42 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
+def _peek_token_path() -> Path:
+    from hermes_constants import get_hermes_home
+
+    return get_hermes_home() / "cloakbrowser-peek-token"
+
+
 def peek_token() -> str:
+    """Return the peek token shared with cloakserve.
+
+    Precedence: explicit env var, then the token persisted under
+    ``HERMES_HOME``, then a freshly generated one (persisted for reuse).
+    Persistence matters because cloakserve outlives the launching process
+    (one-shot desktop turns, restarted CLIs): a per-process random token
+    would make every follow-up process fail ``/peek/status`` against the
+    surviving cloakserve and hard-error the browser tools.
+    """
     global _generated_peek_token
     configured = os.environ.get("CLOAKBROWSER_PEEK_TOKEN", "").strip()
     if configured:
         return configured
     if _generated_peek_token is None:
-        _generated_peek_token = secrets.token_urlsafe(32)
+        path = _peek_token_path()
+        try:
+            persisted = path.read_text(encoding="utf-8").strip()
+        except OSError:
+            persisted = ""
+        if persisted:
+            _generated_peek_token = persisted
+        else:
+            _generated_peek_token = secrets.token_urlsafe(32)
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.touch(mode=0o600, exist_ok=True)
+                path.write_text(_generated_peek_token, encoding="utf-8")
+            except OSError:
+                logger.debug("Could not persist CloakBrowser peek token", exc_info=True)
     return _generated_peek_token
 
 
@@ -263,6 +291,57 @@ def _peek_token_accepted(seed: str) -> bool:
     return response.status_code == 200
 
 
+def _terminate_stale_cloakserve() -> bool:
+    """Terminate a cloakserve on our port that rejects the current peek token.
+
+    The loopback port is product-owned; a listener there that fails
+    ``/peek/status`` is a stale cloakserve from a previous session whose
+    token no longer matches. Replacing it automatically keeps browser tools
+    working instead of hard-erroring with a "restart it yourself" message.
+    Only processes whose command line mentions cloakserve are touched.
+    """
+    try:
+        import psutil
+    except ImportError:
+        return False
+
+    target_port = port()
+    killed = False
+    for proc in psutil.process_iter(["pid", "cmdline"]):
+        try:
+            cmdline = " ".join(proc.info.get("cmdline") or [])
+            if "cloakserve" not in cmdline:
+                continue
+            listens_here = any(
+                conn.status == psutil.CONN_LISTEN
+                and conn.laddr
+                and conn.laddr.port == target_port
+                for conn in proc.net_connections(kind="inet")
+            )
+            if not listens_here:
+                continue
+            logger.warning(
+                "Replacing stale cloakserve (pid %s) that rejected the current peek token",
+                proc.pid,
+            )
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except psutil.TimeoutExpired:
+                proc.kill()
+                try:
+                    proc.wait(timeout=5)
+                except psutil.TimeoutExpired:
+                    # A zombie (dead but unreaped by its parent) no longer
+                    # holds the port; treat it as replaced.
+                    if proc.is_running() and proc.status() != psutil.STATUS_ZOMBIE:
+                        raise
+            killed = True
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            continue
+    return killed
+
+
 def ensure_cdp_url(
     task_id: str | None,
     resolve_cdp_url: Callable[[str], str],
@@ -274,11 +353,16 @@ def ensure_cdp_url(
     if _resolved_cdp_url(cdp_url):
         if _peek_token_accepted(seed):
             return cdp_url
-        raise RuntimeError(
-            "CloakBrowser CDP is reachable but /peek/status did not accept "
-            "the configured CLOAKBROWSER_PEEK_TOKEN. Stop the existing "
-            "cloakserve process or restart it with the same token."
-        )
+        # A live cloakserve that rejects our token is stale (previous session,
+        # different token). Self-heal: replace it and fall through to launch.
+        if not _terminate_stale_cloakserve():
+            raise RuntimeError(
+                "CloakBrowser CDP is reachable but /peek/status did not accept "
+                "the configured CLOAKBROWSER_PEEK_TOKEN, and the stale "
+                "cloakserve process could not be replaced automatically. Stop "
+                "the existing cloakserve process or restart it with the same "
+                "token."
+            )
 
     with _lock:
         if not process_running():
@@ -361,4 +445,9 @@ def stop_cloakserve() -> None:
         proc.wait(timeout=5)
 
 
-atexit.register(stop_cloakserve)
+# NOTE: stop_cloakserve is intentionally NOT registered with atexit. The
+# desktop shell runs one-shot event_runner processes per turn; killing
+# cloakserve when the launcher exits would tear down the live browser (and
+# the peek surface) at the end of every turn. cloakserve reaps itself via
+# --idle-timeout, and the host persists the peek token precisely so a
+# surviving cloakserve can serve the next session.

@@ -248,6 +248,8 @@ def test_existing_cloakserve_must_accept_current_peek_token(monkeypatch, tmp_pat
         _discovery_response(),
         _peek_status_response(403),
     ]))
+    # Self-heal cannot replace the stale process in this scenario.
+    monkeypatch.setattr(cloakbrowser_runtime, "_terminate_stale_cloakserve", lambda: False)
     popen = Mock(return_value=_RunningProcess())
     monkeypatch.setattr(cloakbrowser_runtime.subprocess, "Popen", popen)
 
@@ -256,6 +258,36 @@ def test_existing_cloakserve_must_accept_current_peek_token(monkeypatch, tmp_pat
 
     provider.create_session.assert_not_called()
     popen.assert_not_called()
+
+
+def test_stale_cloakserve_is_replaced_and_relaunched(monkeypatch, tmp_path):
+    # Given: a live cloakserve that rejects the current peek token (stale
+    # process from a previous session), which CAN be terminated.
+    _install_cloakserve(tmp_path, monkeypatch)
+    provider = Mock()
+    provider.create_session.side_effect = AssertionError("provider should not be used")
+    monkeypatch.setattr(browser_tool, "_get_cloud_provider", lambda: provider)
+    monkeypatch.setattr(browser_tool, "_get_cdp_override", lambda: "")
+    monkeypatch.setattr(cloakbrowser_runtime.shutil, "which", lambda name: None)
+    monkeypatch.setattr(browser_tool.requests, "get", Mock(side_effect=[
+        _discovery_response(),      # stale server answers discovery
+        _peek_status_response(403),  # ...but rejects our token
+        _discovery_response(),      # relaunched server answers discovery
+        _peek_status_response(200),  # ...and accepts the token
+    ]))
+    terminate = Mock(return_value=True)
+    monkeypatch.setattr(cloakbrowser_runtime, "_terminate_stale_cloakserve", terminate)
+    popen = Mock(return_value=_RunningProcess())
+    monkeypatch.setattr(cloakbrowser_runtime.subprocess, "Popen", popen)
+
+    # When: a session is created.
+    session = browser_tool._get_session_info("stale-task")
+
+    # Then: the stale server was replaced and a fresh cloakserve launched.
+    assert session["features"]["cloakbrowser"] is True
+    assert session["cdp_url"] == WS_URL
+    terminate.assert_called_once()
+    popen.assert_called_once()
 
 
 def test_explicit_cdp_override_still_wins(monkeypatch, tmp_path):
