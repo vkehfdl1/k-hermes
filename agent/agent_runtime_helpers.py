@@ -57,7 +57,7 @@ def _ra():
 
 
 AGENT_RUNTIME_POST_HOOK_TOOL_NAMES = frozenset(
-    {"todo", "session_search", "memory", "clarify", "read_terminal", "delegate_task"}
+    {"todo", "session_search", "memory", "clarify", "request_vault_credential", "read_terminal", "delegate_task"}
 )
 
 
@@ -2247,6 +2247,19 @@ def invoke_tool(agent, function_name: str, function_args: dict, effective_task_i
                     question=next_args.get("question", ""),
                     choices=next_args.get("choices"),
                     callback=agent.clarify_callback,
+                ),
+                next_args,
+            )
+    elif function_name == "request_vault_credential":
+        def _execute(next_args: dict) -> Any:
+            from tools.vault_credential_request_tool import request_vault_credential_tool as _vc_tool
+            return _finish_agent_tool(
+                _vc_tool(
+                    service=next_args.get("service", ""),
+                    item_name=next_args.get("item_name"),
+                    display_name=next_args.get("display_name"),
+                    reason=next_args.get("reason"),
+                    callback=getattr(agent, "vault_credential_callback", None),
                 ),
                 next_args,
             )

@@ -1268,6 +1268,27 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
             tool_duration = time.time() - tool_start_time
             if agent._should_emit_quiet_tool_messages():
                 agent._vprint(f"  {_get_cute_tool_message_impl('clarify', function_args, tool_duration, result=function_result)}")
+        elif function_name == "request_vault_credential":
+            def _execute(next_args: dict) -> Any:
+                from tools.vault_credential_request_tool import request_vault_credential_tool as _vc_tool
+                return _vc_tool(
+                    service=next_args.get("service", ""),
+                    item_name=next_args.get("item_name"),
+                    display_name=next_args.get("display_name"),
+                    reason=next_args.get("reason"),
+                    callback=getattr(agent, "vault_credential_callback", None),
+                )
+            function_result, function_args = _run_agent_tool_execution_middleware(
+                agent,
+                function_name=function_name,
+                function_args=function_args,
+                effective_task_id=effective_task_id,
+                tool_call_id=getattr(tool_call, "id", "") or "",
+                execute=_execute,
+            )
+            tool_duration = time.time() - tool_start_time
+            if agent._should_emit_quiet_tool_messages():
+                agent._vprint(f"  {_get_cute_tool_message_impl('request_vault_credential', function_args, tool_duration, result=function_result)}")
         elif function_name == "read_terminal":
             def _execute(next_args: dict) -> Any:
                 from tools.read_terminal_tool import read_terminal_tool as _read_terminal_tool
