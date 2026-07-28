@@ -373,3 +373,25 @@ class TestLoginTextboxMasking:
         )
         masked = _mask_login_textbox_values(snapshot)
         assert "- textbox [ref=e1]\n" in masked
+
+    def test_masks_static_text_value_child_in_full_snapshot(self):
+        from tools.browser_tool import _mask_login_textbox_values
+
+        snapshot = (
+            '- dialog "Sign in"\n'
+            "  - LabelText\n"
+            '    - StaticText "Email"\n'
+            '    - textbox "Email" [ref=e2]: jane@example.com\n'
+            '      - StaticText "jane@example.com"\n'
+            "  - LabelText\n"
+            '    - StaticText "Password"\n'
+            '    - textbox "Password" [ref=e3]: \u2022\u2022\u2022\n'
+            '  - button "Log in" [ref=e4]'
+        )
+        masked = _mask_login_textbox_values(snapshot)
+        assert "jane@example.com" not in masked
+        assert 'textbox "Email" [ref=e2]: \u2022\u2022\u2022' in masked
+        # sibling structure outside the textbox subtree is untouched
+        assert '- StaticText "Email"\n' in masked
+        assert '- StaticText "Password"\n' in masked
+        assert 'button "Log in" [ref=e4]' in masked

@@ -2519,7 +2519,8 @@ _LOGIN_FIELD_MASK = "\u2022\u2022\u2022"
 _MASKED_TEXTBOX_RE = re.compile(
     r"^\s*-\s*textbox\b.*:\s*[\u2022\u25cf*]{3,}\s*$", re.MULTILINE
 )
-_TEXTBOX_LINE_RE = re.compile(r"^(\s*-\s*textbox\b.*?:)\s*(\S.*)$", re.MULTILINE)
+_TEXTBOX_LINE_RE = re.compile(r"^(\s*-\s*textbox\b.*?:)\s*(\S.*)$")
+_STATIC_TEXT_LINE_RE = re.compile(r'^(\s*-\s*StaticText\s+")(.*?)("\s*)$')
 _BULLET_VALUE_RE = re.compile(r"[\u2022\u25cf*]{3,}\s*")
 
 
@@ -2529,19 +2530,41 @@ def _mask_login_textbox_values(snapshot_text: str) -> str:
     A masked (bullet-only) textbox value means the page holds a password
     input, i.e. it is a login or signup form. Any other filled textbox on
     that page is a username/email credential whose value must not reach the
-    model. Empty textboxes and pages without a masked password field are
-    returned unchanged; refs and labels are preserved so the agent can
-    still click/type by ref.
+    model. agent-browser masks the password input's whole subtree, but a
+    filled non-password textbox leaks its value twice: on the textbox line
+    itself and, in full snapshots, as a nested ``StaticText`` child. Both
+    are masked here. Empty textboxes and pages without a masked password
+    field are returned unchanged; refs and labels are preserved so the
+    agent can still click/type by ref.
     """
     if not snapshot_text or not _MASKED_TEXTBOX_RE.search(snapshot_text):
         return snapshot_text
 
-    def _mask(match) -> str:
-        if _BULLET_VALUE_RE.fullmatch(match.group(2)):
-            return match.group(0)  # the masked password field itself
-        return f"{match.group(1)} {_LOGIN_FIELD_MASK}"
-
-    return _TEXTBOX_LINE_RE.sub(_mask, snapshot_text)
+    out_lines = []
+    masked_textbox_indent = None
+    for line in snapshot_text.splitlines(keepends=True):
+        indent = len(line) - len(line.lstrip())
+        if masked_textbox_indent is not None:
+            if line.strip() and indent > masked_textbox_indent:
+                # Inside the masked textbox's subtree: its StaticText child
+                # carries the same secret value — mask it too.
+                static = _STATIC_TEXT_LINE_RE.match(line.rstrip("\n"))
+                if static and not _BULLET_VALUE_RE.fullmatch(static.group(2)):
+                    ending = "\n" if line.endswith("\n") else ""
+                    line = (
+                        f"{static.group(1)}{_LOGIN_FIELD_MASK}"
+                        f"{static.group(3)}{ending}"
+                    )
+                out_lines.append(line)
+                continue
+            masked_textbox_indent = None  # dedent: subtree ended
+        textbox = _TEXTBOX_LINE_RE.match(line.rstrip("\n"))
+        if textbox and not _BULLET_VALUE_RE.fullmatch(textbox.group(2)):
+            ending = "\n" if line.endswith("\n") else ""
+            line = f"{textbox.group(1)} {_LOGIN_FIELD_MASK}{ending}"
+            masked_textbox_indent = indent
+        out_lines.append(line)
+    return "".join(out_lines)
 
 
 def _redact_browser_output(value: Any) -> Any:
