@@ -2509,6 +2509,41 @@ def _truncate_snapshot(snapshot_text: str, max_chars: int = 8000) -> str:
     return '\n'.join(result)
 
 
+# Login-credential masking for snapshots. agent-browser already masks
+# password-field values with bullets, but leaves sibling username/email
+# textbox values in clear text. A host credential broker (e.g. Dolshoi's
+# vault credential actions) fills those fields without the agent ever seeing
+# the secret, so the snapshot must not re-expose the filled value to the
+# model. Masking is text-based: k-hermes never reads the value itself.
+_LOGIN_FIELD_MASK = "\u2022\u2022\u2022"
+_MASKED_TEXTBOX_RE = re.compile(
+    r"^\s*-\s*textbox\b.*:\s*[\u2022\u25cf*]{3,}\s*$", re.MULTILINE
+)
+_TEXTBOX_LINE_RE = re.compile(r"^(\s*-\s*textbox\b.*?:)\s*(\S.*)$", re.MULTILINE)
+_BULLET_VALUE_RE = re.compile(r"[\u2022\u25cf*]{3,}\s*")
+
+
+def _mask_login_textbox_values(snapshot_text: str) -> str:
+    """Mask filled textbox values on snapshots that contain a password field.
+
+    A masked (bullet-only) textbox value means the page holds a password
+    input, i.e. it is a login or signup form. Any other filled textbox on
+    that page is a username/email credential whose value must not reach the
+    model. Empty textboxes and pages without a masked password field are
+    returned unchanged; refs and labels are preserved so the agent can
+    still click/type by ref.
+    """
+    if not snapshot_text or not _MASKED_TEXTBOX_RE.search(snapshot_text):
+        return snapshot_text
+
+    def _mask(match) -> str:
+        if _BULLET_VALUE_RE.fullmatch(match.group(2)):
+            return match.group(0)  # the masked password field itself
+        return f"{match.group(1)} {_LOGIN_FIELD_MASK}"
+
+    return _TEXTBOX_LINE_RE.sub(_mask, snapshot_text)
+
+
 def _redact_browser_output(value: Any) -> Any:
     """Redact secrets from browser-originated data before returning to the model.
 
@@ -2740,7 +2775,9 @@ def browser_navigate(url: str, task_id: Optional[str] = None) -> str:
                 refs = snap_data.get("refs", {})
                 if len(snapshot_text) > SNAPSHOT_SUMMARIZE_THRESHOLD:
                     snapshot_text = _truncate_snapshot(snapshot_text)
-                response["snapshot"] = _redact_browser_output(snapshot_text)
+                response["snapshot"] = _redact_browser_output(
+                    _mask_login_textbox_values(snapshot_text)
+                )
                 response["element_count"] = len(refs) if refs else 0
                 if snap_result.get("fallback_warning") and not response.get("fallback_warning"):
                     _copy_fallback_warning(response, snap_result)
@@ -2824,7 +2861,9 @@ def browser_snapshot(
 
         response = {
             "success": True,
-            "snapshot": _redact_browser_output(snapshot_text),
+            "snapshot": _redact_browser_output(
+                _mask_login_textbox_values(snapshot_text)
+            ),
             "element_count": len(refs) if refs else 0
         }
         _copy_fallback_warning(response, result)

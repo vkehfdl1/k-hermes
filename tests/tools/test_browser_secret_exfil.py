@@ -324,3 +324,52 @@ class TestBrowserSupervisorRedaction:
         assert result["pending_dialogs"][0]["message"].startswith("Enter API key sk-")
         assert result["pending_dialogs"][0]["default_prompt"].startswith("sk-")
         assert result["recent_dialogs"][0]["message"].startswith("Recent key sk-")
+
+
+class TestLoginTextboxMasking:
+    """Snapshots of login forms must not expose filled username values."""
+
+    def test_masks_username_when_password_field_present(self):
+        from tools.browser_tool import _mask_login_textbox_values
+
+        snapshot = (
+            "- generic\n"
+            "  - textbox [ref=e1]: jane.doe@example.com\n"
+            "  - textbox [ref=e2]: \u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\n"
+            "  - button \"Sign in\" [ref=e3]"
+        )
+        masked = _mask_login_textbox_values(snapshot)
+        assert "jane.doe@example.com" not in masked
+        assert "[ref=e1]" in masked  # refs survive so the agent can still act
+        assert "textbox [ref=e2]: \u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022" in masked
+        assert 'button "Sign in" [ref=e3]' in masked
+
+    def test_masks_labeled_textbox_value(self):
+        from tools.browser_tool import _mask_login_textbox_values
+
+        snapshot = (
+            '- textbox "Email" [ref=e4]: user@corp.example\n'
+            "- textbox \"Password\" [ref=e5]: \u2022\u2022\u2022"
+        )
+        masked = _mask_login_textbox_values(snapshot)
+        assert "user@corp.example" not in masked
+        assert '"Email" [ref=e4]' in masked
+
+    def test_leaves_snapshot_without_password_field_untouched(self):
+        from tools.browser_tool import _mask_login_textbox_values
+
+        snapshot = (
+            "- textbox [ref=e1]: search query\n"
+            "- button \"Go\" [ref=e2]"
+        )
+        assert _mask_login_textbox_values(snapshot) == snapshot
+
+    def test_leaves_empty_textboxes_untouched_on_login_page(self):
+        from tools.browser_tool import _mask_login_textbox_values
+
+        snapshot = (
+            "- textbox [ref=e1]\n"
+            "- textbox [ref=e2]: \u2022\u2022\u2022"
+        )
+        masked = _mask_login_textbox_values(snapshot)
+        assert "- textbox [ref=e1]\n" in masked
